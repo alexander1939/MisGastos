@@ -38,8 +38,8 @@ export default function Dashboard() {
     queryFn: () => analyticsApi.trend({ days: 30 }),
   });
   const { data: byCategory } = useQuery({
-    queryKey: ['byCategory', 'mes'],
-    queryFn: () => analyticsApi.byCategory({ period: 'mes' }),
+    queryKey: ['byCategory'],
+    queryFn: () => analyticsApi.byCategory({}),
   });
   const { data: monthly } = useQuery({
     queryKey: ['monthly'],
