@@ -1,0 +1,1 @@
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS pay_month VARCHAR(7);

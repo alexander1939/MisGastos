@@ -46,16 +46,16 @@ async function stats(userId) {
 
 async function create(userId, data) {
   const { rows } = await pool.query(
-    `INSERT INTO purchases (user_id, card_id, description, amount, category, months, date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [userId, data.card_id, data.description, data.amount, data.category, data.months || 1, data.date]
+    `INSERT INTO purchases (user_id, card_id, description, amount, category, months, date, pay_month)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [userId, data.card_id, data.description, data.amount, data.category, data.months || 1, data.date, data.pay_month || null]
   );
   await invalidateCards(userId);
   return rows[0];
 }
 
 async function update(userId, id, data) {
-  const allowed = ['description', 'amount', 'category', 'months', 'date', 'card_id'];
+  const allowed = ['description', 'amount', 'category', 'months', 'date', 'card_id', 'pay_month'];
   const fields = [];
   const values = [];
   let i = 1;
