@@ -13,14 +13,27 @@ async function cached(key, fn) {
 
 async function byCategory(userId, { period }) {
   return cached(`analytics:cat:${userId}:${period}`, async () => {
-    const dateFilter = period === 'mes'
-      ? `AND t.date >= DATE_TRUNC('month', NOW())`
+    const dateFilterTx = period === 'mes'
+      ? `AND date >= DATE_TRUNC('month', NOW())`
       : period === 'semana'
-      ? `AND t.date >= NOW() - INTERVAL '7 days'`
+      ? `AND date >= NOW() - INTERVAL '7 days'`
+      : '';
+    const dateFilterPu = period === 'mes'
+      ? `AND date >= DATE_TRUNC('month', NOW())`
+      : period === 'semana'
+      ? `AND date >= NOW() - INTERVAL '7 days'`
       : '';
     const { rows } = await pool.query(
-      `SELECT category, SUM(amount) AS total FROM transactions
-       WHERE user_id = $1 AND type = 'gasto' ${dateFilter}
+      `SELECT category, SUM(total) AS total
+       FROM (
+         SELECT category, amount AS total
+         FROM transactions
+         WHERE user_id = $1 AND type = 'gasto' ${dateFilterTx}
+         UNION ALL
+         SELECT category, amount AS total
+         FROM purchases
+         WHERE user_id = $1 AND status != 'archivado' ${dateFilterPu}
+       ) sub
        GROUP BY category ORDER BY total DESC`,
       [userId]
     );
@@ -73,12 +86,23 @@ async function cardsDebt(userId) {
 
 async function monthlyComparison(userId, { months = 6 }) {
   return cached(`analytics:monthly:${userId}:${months}`, async () => {
+    const interval = `${parseInt(months) - 1} months`;
     const { rows } = await pool.query(
-      `SELECT TO_CHAR(date, 'YYYY-MM') AS month,
-              SUM(CASE WHEN type='gasto' THEN amount ELSE 0 END) AS gastos,
-              SUM(CASE WHEN type='ingreso' THEN amount ELSE 0 END) AS ingresos
-       FROM transactions
-       WHERE user_id = $1 AND date >= DATE_TRUNC('month', NOW()) - INTERVAL '${parseInt(months) - 1} months'
+      `SELECT month, SUM(ingresos) AS ingresos, SUM(gastos) AS gastos
+       FROM (
+         SELECT TO_CHAR(date,'YYYY-MM') AS month,
+                CASE WHEN type='ingreso' THEN amount ELSE 0 END AS ingresos,
+                CASE WHEN type='gasto'   THEN amount ELSE 0 END AS gastos
+         FROM transactions
+         WHERE user_id = $1
+           AND date >= DATE_TRUNC('month', NOW()) - INTERVAL '${interval}'
+         UNION ALL
+         SELECT TO_CHAR(date,'YYYY-MM') AS month, 0 AS ingresos, amount AS gastos
+         FROM purchases
+         WHERE user_id = $1
+           AND status != 'archivado'
+           AND date >= DATE_TRUNC('month', NOW()) - INTERVAL '${interval}'
+       ) sub
        GROUP BY month ORDER BY month`,
       [userId]
     );

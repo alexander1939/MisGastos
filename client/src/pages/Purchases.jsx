@@ -33,7 +33,8 @@ export default function Purchases() {
   });
 
   function invalidateAll() {
-    ['purchases', 'purchases-pending', 'purchases-cal', 'monthly'].forEach(k =>
+    ['purchases', 'purchases-pending', 'purchases-cal',
+     'monthly', 'summary', 'trend', 'byCategory'].forEach(k =>
       qc.invalidateQueries({ queryKey: [k] })
     );
   }

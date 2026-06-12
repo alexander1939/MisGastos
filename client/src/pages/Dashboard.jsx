@@ -145,23 +145,17 @@ export default function Dashboard() {
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
   }, [upcoming, upcomingCards, recentTx, recentPurchases]);
 
-  // Gastos diarios del mes (transacciones + compras por día)
-  const dailySpending = useMemo(() => {
-    const map = {};
-    for (const t of (trend || [])) {
-      if (t.date >= msStart && t.date <= msEnd) {
-        map[t.date] = { date: t.date, efectivo: parseFloat(t.gastos) || 0, tarjeta: 0 };
-      }
-    }
-    for (const p of (pendingRes?.data || [])) {
-      if (p.date >= msStart && p.date <= msEnd && p.status !== 'archivado') {
-        if (!map[p.date]) map[p.date] = { date: p.date, efectivo: 0, tarjeta: 0 };
-        map[p.date].tarjeta += parseFloat(p.amount);
-      }
-    }
-    return Object.values(map).sort((a, b) => a.date.localeCompare(b.date))
-      .map(d => ({ ...d, label: d.date.slice(8) })); // solo el día "08", "11"...
-  }, [trend, pendingRes, msStart, msEnd]);
+  // Deuda total por tarjeta (todas las compras pendientes/urgentes, sin filtro de mes)
+  const cardTotals = useMemo(() =>
+    cards
+      .filter(c => pendingByCard[c.id] > 0)
+      .map(c => ({ name: c.name, total: pendingByCard[c.id], color: c.color || '#6366f1' }))
+      .sort((a, b) => b.total - a.total),
+  [cards, pendingByCard]);
+
+  const totalDeuda = useMemo(() =>
+    cardTotals.reduce((s, c) => s + c.total, 0),
+  [cardTotals]);
 
   // Historial mensual — formatea mes para mostrar
   const monthlyData = useMemo(() => (monthly || []).map(r => ({
@@ -181,17 +175,25 @@ export default function Dashboard() {
 
       {/* Stats del mes */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Ingresos del mes"  value={formatCurrency(ingresos)} color="text-green-400" />
+        <StatCard label="Ingresos del mes" value={formatCurrency(ingresos)} color="text-green-400" />
         <StatCard
-          label="Gastos del mes"
-          value={formatCurrency(gastos + purchasesThisMonth)}
+          label="Total que debes"
+          value={formatCurrency(gastos + totalDeuda)}
           color="text-red-400"
-          sub={purchasesThisMonth > 0 ? `${formatCurrency(gastos)} efectivo + ${formatCurrency(purchasesThisMonth)} tarjeta` : undefined}
+          sub={
+            gastos > 0 && totalDeuda > 0
+              ? `${formatCurrency(gastos)} efectivo + ${formatCurrency(totalDeuda)} tarjeta`
+              : gastos > 0
+              ? `${formatCurrency(gastos)} en efectivo`
+              : totalDeuda > 0
+              ? `${formatCurrency(totalDeuda)} en tarjeta`
+              : undefined
+          }
         />
         <StatCard
           label="Balance"
-          value={formatCurrency(ingresos - gastos - purchasesThisMonth)}
-          color={(ingresos - gastos - purchasesThisMonth) >= 0 ? 'text-green-400' : 'text-red-400'}
+          value={formatCurrency(ingresos - gastos - totalDeuda)}
+          color={(ingresos - gastos - totalDeuda) >= 0 ? 'text-green-400' : 'text-red-400'}
         />
         <StatCard label="Esta semana" value={feedByDate.length} sub="días con actividad" />
       </div>
@@ -237,34 +239,31 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Gráfica gastos diarios del mes */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-medium text-gray-400">Gastos del mes — día a día</h2>
-          <div className="flex items-center gap-3 text-xs text-gray-500">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500 inline-block"/>Efectivo</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-pink-500 inline-block"/>Tarjeta</span>
+      {/* Gastos por tarjeta este mes */}
+      {cardTotals.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-medium text-gray-400 mb-4">Deuda pendiente por tarjeta</h2>
+          <div className="space-y-3">
+            {cardTotals.map(c => {
+              const pct = totalDeuda > 0 ? Math.min((c.total / totalDeuda) * 100, 100) : 0;
+              return (
+                <div key={c.name}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="flex items-center gap-2 text-sm text-gray-300">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                      {c.name}
+                    </span>
+                    <span className="text-sm font-semibold text-gray-100">{formatCurrency(c.total)}</span>
+                  </div>
+                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: c.color }} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
-        {dailySpending.length ? (
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={dailySpending} barSize={14}>
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${(v/1000).toFixed(1)}k`} />
-              <Tooltip
-                formatter={(v, name) => [formatCurrency(v), name === 'efectivo' ? 'Efectivo' : 'Tarjeta']}
-                labelFormatter={l => `Día ${l}`}
-              />
-              <Bar dataKey="efectivo" stackId="a" fill="#ef4444" radius={[0,0,0,0]} name="efectivo" />
-              <Bar dataKey="tarjeta"  stackId="a" fill="#ec4899" radius={[3,3,0,0]} name="tarjeta" />
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="h-[220px] flex items-center justify-center text-gray-600 text-sm">
-            Sin gastos registrados este mes
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Historial mensual */}
       {monthlyData.length > 0 && (

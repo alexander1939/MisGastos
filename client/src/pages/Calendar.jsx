@@ -106,6 +106,7 @@ export default function Calendar() {
   const daysInMon = new Date(y, m, 0).getDate();
   const monthFrom = `${month}-01`;
   const monthTo   = `${month}-${String(daysInMon).padStart(2, '0')}`;
+  const isCurrentMonth = month === currentMonth();
 
   // --- Datos ---
   const { data: dbEvents = [], isLoading } = useQuery({
@@ -148,8 +149,9 @@ export default function Calendar() {
     Object.fromEntries(cards.map(c => [c.id, c])),
   [cards]);
 
-  // --- Eventos virtuales: corte y pago de cada tarjeta (solo si tiene deuda) ---
+  // --- Eventos virtuales: corte y pago (solo mes actual y solo si hay deuda) ---
   const cardEvents = useMemo(() => {
+    if (!isCurrentMonth) return []; // meses futuros/pasados = sin eventos de tarjeta
     const evs = [];
     for (const card of cards) {
       if (!pendingByCard[card.id]) continue; // sin deuda = sin eventos de tarjeta

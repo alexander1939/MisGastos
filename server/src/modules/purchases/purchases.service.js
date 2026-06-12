@@ -1,7 +1,12 @@
 const { pool } = require('../../config/db');
 const { redis } = require('../../config/redis');
 
-const invalidateCards = (userId) => redis.del(`analytics:cards:${userId}`);
+const invalidateCards = (userId) => redis.del(
+  `analytics:cards:${userId}`,
+  `analytics:cat:${userId}:mes`,
+  `analytics:cat:${userId}:semana`,
+  `analytics:monthly:${userId}:6`
+);
 
 async function list(userId, { cardId, status, period, from, to, page = 1, limit = 20 }) {
   const where = ['p.user_id = $1'];
