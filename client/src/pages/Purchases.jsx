@@ -32,19 +32,25 @@ export default function Purchases() {
     queryFn: () => purchasesApi.list(filter ? { status: filter } : {}),
   });
 
+  function invalidateAll() {
+    ['purchases', 'purchases-pending', 'purchases-cal', 'monthly'].forEach(k =>
+      qc.invalidateQueries({ queryKey: [k] })
+    );
+  }
+
   const create = useMutation({
     mutationFn: purchasesApi.create,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['purchases'] }),
+    onSuccess: invalidateAll,
   });
 
   const update = useMutation({
     mutationFn: ({ id, ...data }) => purchasesApi.update(id, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['purchases'] }),
+    onSuccess: invalidateAll,
   });
 
   const updateStatus = useMutation({
     mutationFn: ({ id, status }) => purchasesApi.updateStatus(id, status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['purchases'] }),
+    onSuccess: invalidateAll,
   });
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));

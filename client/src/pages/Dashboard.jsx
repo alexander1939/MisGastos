@@ -8,7 +8,7 @@ import { cardsApi } from '../api/cards';
 import { StatCard } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { formatCurrency } from '../utils/formatCurrency';
-import { fmtDate, monthStart, monthEnd } from '../utils/dateHelpers';
+import { fmtDate, monthStart, monthEnd, today } from '../utils/dateHelpers';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
@@ -108,9 +108,60 @@ export default function Dashboard() {
     return evs;
   }, [cards, pendingByCard]);
 
-  const allUpcoming = useMemo(() =>
-    [...upcoming, ...upcomingCards].sort((a, b) => a.date.localeCompare(b.date)),
-  [upcoming, upcomingCards]);
+  // Transacciones de los últimos 7 días
+  const todayStr = today();
+  const sevenAgo = useMemo(() => {
+    const d = new Date(); d.setDate(d.getDate() - 7);
+    return d.toISOString().slice(0, 10);
+  }, []);
+
+  const { data: recentTxRes } = useQuery({
+    queryKey: ['transactions-recent', sevenAgo],
+    queryFn: () => transactionsApi.list({ from: sevenAgo, limit: 50 }),
+  });
+  const recentTx = recentTxRes?.data || [];
+
+  // Compras recientes (del pendingRes que ya tenemos)
+  const recentPurchases = useMemo(() =>
+    (pendingRes?.data || []).filter(p => p.date >= sevenAgo && p.status !== 'archivado'),
+  [pendingRes, sevenAgo]);
+
+  // Feed combinado: eventos futuros + gastos/compras recientes, agrupado por fecha
+  const feedByDate = useMemo(() => {
+    const items = [];
+    for (const ev of [...upcoming, ...upcomingCards]) {
+      items.push({ date: ev.date, kind: 'event', label: ev.title, urgency: ev.urgency, amount: ev.amount });
+    }
+    for (const t of recentTx) {
+      items.push({ date: t.date, kind: t.type, label: t.description || t.category, amount: parseFloat(t.amount), sub: t.category });
+    }
+    for (const p of recentPurchases) {
+      items.push({ date: p.date, kind: 'compra', label: p.description, amount: parseFloat(p.amount), sub: p.card_name ? `Tarjeta: ${p.card_name}` : null, status: p.status });
+    }
+    const map = {};
+    for (const item of items) {
+      (map[item.date] = map[item.date] || []).push(item);
+    }
+    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [upcoming, upcomingCards, recentTx, recentPurchases]);
+
+  // Gastos diarios del mes (transacciones + compras por día)
+  const dailySpending = useMemo(() => {
+    const map = {};
+    for (const t of (trend || [])) {
+      if (t.date >= msStart && t.date <= msEnd) {
+        map[t.date] = { date: t.date, efectivo: parseFloat(t.gastos) || 0, tarjeta: 0 };
+      }
+    }
+    for (const p of (pendingRes?.data || [])) {
+      if (p.date >= msStart && p.date <= msEnd && p.status !== 'archivado') {
+        if (!map[p.date]) map[p.date] = { date: p.date, efectivo: 0, tarjeta: 0 };
+        map[p.date].tarjeta += parseFloat(p.amount);
+      }
+    }
+    return Object.values(map).sort((a, b) => a.date.localeCompare(b.date))
+      .map(d => ({ ...d, label: d.date.slice(8) })); // solo el día "08", "11"...
+  }, [trend, pendingRes, msStart, msEnd]);
 
   // Historial mensual — formatea mes para mostrar
   const monthlyData = useMemo(() => (monthly || []).map(r => ({
@@ -142,7 +193,7 @@ export default function Dashboard() {
           value={formatCurrency(ingresos - gastos - purchasesThisMonth)}
           color={(ingresos - gastos - purchasesThisMonth) >= 0 ? 'text-green-400' : 'text-red-400'}
         />
-        <StatCard label="Eventos próximos" value={allUpcoming.length} sub="en los próximos 7 días" />
+        <StatCard label="Esta semana" value={feedByDate.length} sub="días con actividad" />
       </div>
 
       {/* Gráficas del mes */}
@@ -184,6 +235,35 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Gráfica gastos diarios del mes */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-medium text-gray-400">Gastos del mes — día a día</h2>
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500 inline-block"/>Efectivo</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-pink-500 inline-block"/>Tarjeta</span>
+          </div>
+        </div>
+        {dailySpending.length ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={dailySpending} barSize={14}>
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${(v/1000).toFixed(1)}k`} />
+              <Tooltip
+                formatter={(v, name) => [formatCurrency(v), name === 'efectivo' ? 'Efectivo' : 'Tarjeta']}
+                labelFormatter={l => `Día ${l}`}
+              />
+              <Bar dataKey="efectivo" stackId="a" fill="#ef4444" radius={[0,0,0,0]} name="efectivo" />
+              <Bar dataKey="tarjeta"  stackId="a" fill="#ec4899" radius={[3,3,0,0]} name="tarjeta" />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-[220px] flex items-center justify-center text-gray-600 text-sm">
+            Sin gastos registrados este mes
+          </div>
+        )}
       </div>
 
       {/* Historial mensual */}
@@ -235,21 +315,67 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Próximos eventos */}
-      {allUpcoming.length > 0 && (
+      {/* Feed diario */}
+      {feedByDate.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <h2 className="text-sm font-medium text-gray-400 mb-3">Próximos 7 días</h2>
-          <div className="space-y-2">
-            {allUpcoming.map(ev => (
-              <div key={ev.id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
-                <div>
-                  <p className="text-sm font-medium">{ev.title}</p>
-                  <p className="text-xs text-gray-500">{fmtDate(ev.date)}</p>
-                  {ev.amount && (
-                    <p className="text-xs font-semibold text-primary-400">{formatCurrency(ev.amount)}</p>
-                  )}
+          <h2 className="text-sm font-medium text-gray-400 mb-4">Actividad — esta semana</h2>
+          <div className="space-y-4">
+            {feedByDate.map(([date, items]) => (
+              <div key={date}>
+                {/* Cabecera del día */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                    date === todayStr
+                      ? 'bg-primary-600 text-white'
+                      : date > todayStr
+                        ? 'bg-gray-800 text-gray-300'
+                        : 'bg-gray-800/50 text-gray-500'
+                  }`}>
+                    {date === todayStr ? 'Hoy' : fmtDate(date)}
+                  </span>
+                  <div className="flex-1 h-px bg-gray-800" />
                 </div>
-                {ev.urgency && <Badge label={ev.urgency} />}
+                {/* Items del día */}
+                <div className="space-y-1 pl-2">
+                  {items.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between py-1.5 border-b border-gray-800/40 last:border-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {/* Ícono de tipo */}
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${
+                          item.kind === 'ingreso' ? 'bg-green-500' :
+                          item.kind === 'gasto'   ? 'bg-red-500' :
+                          item.kind === 'compra'  ? 'bg-pink-500' :
+                          item.urgency === 'urgente' ? 'bg-red-500' :
+                          item.urgency === 'pronto'  ? 'bg-orange-400' :
+                                                       'bg-indigo-500'
+                        }`} />
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-200 truncate">{item.label}</p>
+                          {item.sub && <p className="text-xs text-gray-500 truncate">{item.sub}</p>}
+                          {item.status && item.kind === 'compra' && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                              item.status === 'urgente' ? 'bg-red-900 text-red-300' :
+                              item.status === 'pagado'  ? 'bg-green-900 text-green-300' :
+                                                          'bg-gray-800 text-gray-400'
+                            }`}>{item.status}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 ml-3">
+                        {item.amount != null && (
+                          <p className={`text-sm font-semibold ${
+                            item.kind === 'ingreso' ? 'text-green-400' :
+                            item.kind === 'event'   ? 'text-primary-400' :
+                                                      'text-red-400'
+                          }`}>
+                            {item.kind === 'ingreso' ? '+' : item.kind === 'event' ? '' : '-'}{formatCurrency(item.amount)}
+                          </p>
+                        )}
+                        {item.urgency && <Badge label={item.urgency} />}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
