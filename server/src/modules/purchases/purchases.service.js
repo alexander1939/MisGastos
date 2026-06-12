@@ -1,4 +1,7 @@
 const { pool } = require('../../config/db');
+const { redis } = require('../../config/redis');
+
+const invalidateCards = (userId) => redis.del(`analytics:cards:${userId}`);
 
 async function list(userId, { cardId, status, period, from, to, page = 1, limit = 20 }) {
   const where = ['p.user_id = $1'];
@@ -42,6 +45,7 @@ async function create(userId, data) {
      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
     [userId, data.card_id, data.description, data.amount, data.category, data.months || 1, data.date]
   );
+  await invalidateCards(userId);
   return rows[0];
 }
 
@@ -81,6 +85,7 @@ async function updateStatus(userId, id, status) {
     'UPDATE purchases SET status = $1 WHERE id = $2 AND user_id = $3 RETURNING *',
     [status, id, userId]
   );
+  await invalidateCards(userId);
   return rows[0];
 }
 
@@ -89,6 +94,7 @@ async function remove(userId, id) {
     'DELETE FROM purchases WHERE id = $1 AND user_id = $2', [id, userId]
   );
   if (!rowCount) { const e = new Error('Not found'); e.status = 404; throw e; }
+  await invalidateCards(userId);
 }
 
 module.exports = { list, stats, create, update, updateStatus, remove };

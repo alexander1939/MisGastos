@@ -148,10 +148,11 @@ export default function Calendar() {
     Object.fromEntries(cards.map(c => [c.id, c])),
   [cards]);
 
-  // --- Eventos virtuales: corte y pago de cada tarjeta ---
+  // --- Eventos virtuales: corte y pago de cada tarjeta (solo si tiene deuda) ---
   const cardEvents = useMemo(() => {
     const evs = [];
     for (const card of cards) {
+      if (!pendingByCard[card.id]) continue; // sin deuda = sin eventos de tarjeta
       if (card.cut_day) {
         const day  = Math.min(card.cut_day, daysInMon);
         const date = dayStr(y, m, day);

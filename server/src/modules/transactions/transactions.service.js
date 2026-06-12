@@ -1,4 +1,15 @@
 const { pool } = require('../../config/db');
+const { redis } = require('../../config/redis');
+
+function invalidateAnalytics(userId) {
+  return redis.del(
+    `analytics:cat:${userId}:mes`,
+    `analytics:cat:${userId}:semana`,
+    `analytics:method:${userId}:mes`,
+    `analytics:trend:${userId}:30`,
+    `analytics:monthly:${userId}:6`
+  );
+}
 
 async function list(userId, { period, category, method, from, to, page = 1, limit = 20 }) {
   const where = ['t.user_id = $1'];
@@ -60,6 +71,7 @@ async function create(userId, data) {
      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
     [userId, data.amount, data.type, data.category, data.method, data.description, data.date]
   );
+  await invalidateAnalytics(userId);
   return rows[0];
 }
 
@@ -77,6 +89,7 @@ async function update(userId, id, data) {
     values
   );
   if (!rows[0]) { const e = new Error('Not found'); e.status = 404; throw e; }
+  await invalidateAnalytics(userId);
   return rows[0];
 }
 
@@ -85,6 +98,7 @@ async function remove(userId, id) {
     'DELETE FROM transactions WHERE id = $1 AND user_id = $2', [id, userId]
   );
   if (!rowCount) { const e = new Error('Not found'); e.status = 404; throw e; }
+  await invalidateAnalytics(userId);
 }
 
 async function importCsv(userId, rows) {
@@ -99,6 +113,7 @@ async function importCsv(userId, rows) {
       );
     }
     await client.query('COMMIT');
+    await invalidateAnalytics(userId);
     return { imported: rows.length };
   } catch (err) {
     await client.query('ROLLBACK');
