@@ -8,6 +8,7 @@ import { Input, Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { currentMonth, today, fmtDate } from '../utils/dateHelpers';
 import { formatCurrency } from '../utils/formatCurrency';
+import { effectivePayMonth, getPayMonth } from '../utils/billingHelpers';
 
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
@@ -137,12 +138,15 @@ export default function Calendar() {
   const pendingByCard = useMemo(() => {
     const map = {};
     for (const p of allPurchases) {
-      if ((p.status === 'pendiente' || p.status === 'urgente') && p.card_id) {
+      if ((p.status !== 'pendiente' && p.status !== 'urgente') || !p.card_id) continue;
+      const card = cards.find(c => c.id === p.card_id);
+      const payMon = effectivePayMonth(p, card);
+      if (payMon === month) {
         map[p.card_id] = (map[p.card_id] || 0) + parseFloat(p.amount);
       }
     }
     return map;
-  }, [allPurchases]);
+  }, [allPurchases, cards, month]);
 
   // Mapa id → tarjeta (para lookup desde compras)
   const cardById = useMemo(() =>
@@ -200,10 +204,12 @@ export default function Calendar() {
   const purchaseEvents = useMemo(() => {
     return purchases.map(p => {
       const card = cardById[p.card_id];
-      const billing = billingInfo(p.date, card);
+      const billing = p.pay_month
+        ? { label: new Date(p.pay_month + '-15').toLocaleString('es-MX', { month: 'long', year: 'numeric' }), cycle: null }
+        : getPayMonth(p.date, card);
       const noteparts = [];
       if (p.card_name) noteparts.push(`Tarjeta: ${p.card_name}`);
-      if (billing) noteparts.push(billing.label);
+      if (billing) noteparts.push(`Se paga en ${billing.label}`);
       return {
         id: `vpurch-${p.id}`,
         title: p.description,

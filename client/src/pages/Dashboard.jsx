@@ -8,7 +8,8 @@ import { cardsApi } from '../api/cards';
 import { StatCard } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { formatCurrency } from '../utils/formatCurrency';
-import { fmtDate, monthStart, monthEnd, today } from '../utils/dateHelpers';
+import { fmtDate, monthStart, monthEnd, today, currentMonth } from '../utils/dateHelpers';
+import { effectivePayMonth } from '../utils/billingHelpers';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
@@ -57,15 +58,22 @@ export default function Dashboard() {
     queryKey: ['purchases-pending'],
     queryFn: () => purchasesApi.list({ limit: 500 }),
   });
+  const cardById = useMemo(() => Object.fromEntries(cards.map(c => [c.id, c])), [cards]);
+  const thisMon  = currentMonth();
+
+  // Solo compras pendientes cuyo mes de pago = mes actual
   const pendingByCard = useMemo(() => {
     const map = {};
     for (const p of pendingRes?.data || []) {
-      if ((p.status === 'pendiente' || p.status === 'urgente') && p.card_id) {
+      if ((p.status !== 'pendiente' && p.status !== 'urgente') || !p.card_id) continue;
+      const card = cardById[p.card_id];
+      const payMon = effectivePayMonth(p, card);
+      if (payMon === thisMon) {
         map[p.card_id] = (map[p.card_id] || 0) + parseFloat(p.amount);
       }
     }
     return map;
-  }, [pendingRes]);
+  }, [pendingRes, cardById, thisMon]);
 
   // Compras del mes actual (no archivadas) para sumarlas a gastos
   const msStart = monthStart(new Date());
@@ -145,7 +153,7 @@ export default function Dashboard() {
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
   }, [upcoming, upcomingCards, recentTx, recentPurchases]);
 
-  // Deuda total por tarjeta (todas las compras pendientes/urgentes, sin filtro de mes)
+  // Deuda por tarjeta del mes actual
   const cardTotals = useMemo(() =>
     cards
       .filter(c => pendingByCard[c.id] > 0)
@@ -242,7 +250,7 @@ export default function Dashboard() {
       {/* Gastos por tarjeta este mes */}
       {cardTotals.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <h2 className="text-sm font-medium text-gray-400 mb-4">Deuda pendiente por tarjeta</h2>
+          <h2 className="text-sm font-medium text-gray-400 mb-4">Lo que debes pagar este mes por tarjeta</h2>
           <div className="space-y-3">
             {cardTotals.map(c => {
               const pct = totalDeuda > 0 ? Math.min((c.total / totalDeuda) * 100, 100) : 0;
