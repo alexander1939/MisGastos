@@ -18,6 +18,7 @@ router.get('/', ctrl.list);
 router.get('/stats', ctrl.stats);
 router.post('/', validate(schema), ctrl.create);
 router.put('/:id', ctrl.update);
+router.post('/pay-card', ctrl.payCard);
 router.put('/:id/status', ctrl.updateStatus);
 router.delete('/:id', ctrl.remove);
 

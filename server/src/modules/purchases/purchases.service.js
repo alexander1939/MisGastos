@@ -103,4 +103,62 @@ async function remove(userId, id) {
   await invalidateCards(userId);
 }
 
-module.exports = { list, stats, create, update, updateStatus, remove };
+async function payCard(userId, { cardId, month, fromCardName }) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Busca compras pendientes/urgentes de esa tarjeta cuyo effective pay_month = month
+    const { rows: pending } = await client.query(
+      `SELECT p.id, p.amount
+       FROM purchases p
+       LEFT JOIN cards c ON c.id = p.card_id
+       WHERE p.user_id = $1
+         AND p.card_id = $2
+         AND p.status IN ('pendiente', 'urgente')
+         AND COALESCE(
+           p.pay_month,
+           CASE
+             WHEN EXTRACT(DAY FROM p.date) <= COALESCE(c.cut_day, 31)
+               THEN TO_CHAR(p.date, 'YYYY-MM')
+             ELSE TO_CHAR(p.date + INTERVAL '1 month', 'YYYY-MM')
+           END
+         ) = $3`,
+      [userId, cardId, month]
+    );
+
+    if (!pending.length) {
+      const e = new Error('Sin compras pendientes para este ciclo'); e.status = 400; throw e;
+    }
+
+    const total = pending.reduce((s, p) => s + parseFloat(p.amount), 0);
+
+    // Marca todas como pagado
+    await client.query(
+      `UPDATE purchases SET status = 'pagado'
+       WHERE id = ANY($1) AND user_id = $2`,
+      [pending.map(p => p.id), userId]
+    );
+
+    // Registra el gasto en la tarjeta de débito origen
+    if (fromCardName) {
+      await client.query(
+        `INSERT INTO transactions (user_id, amount, type, category, method, description, date)
+         VALUES ($1, $2, 'gasto', 'Pago tarjeta', $3, $4, CURRENT_DATE)`,
+        [userId, total, fromCardName,
+          `Pago ciclo ${month} — ${pending.length} compra${pending.length > 1 ? 's' : ''}`]
+      );
+    }
+
+    await client.query('COMMIT');
+    await invalidateCards(userId);
+    return { paid: pending.length, total };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { list, stats, create, update, updateStatus, remove, payCard };

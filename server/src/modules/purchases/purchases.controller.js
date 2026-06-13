@@ -24,4 +24,8 @@ async function remove(req, res, next) {
   try { await service.remove(req.userId, req.params.id); res.json({ ok: true }); } catch (err) { next(err); }
 }
 
-module.exports = { list, stats, create, update, updateStatus, remove };
+async function payCard(req, res, next) {
+  try { res.json(await service.payCard(req.userId, req.body)); } catch (err) { next(err); }
+}
+
+module.exports = { list, stats, create, update, updateStatus, remove, payCard };

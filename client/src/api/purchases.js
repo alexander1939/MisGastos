@@ -7,4 +7,5 @@ export const purchasesApi = {
   update: (id, data) => api.put(`/purchases/${id}`, data).then(r => r.data),
   updateStatus: (id, status) => api.put(`/purchases/${id}/status`, { status }).then(r => r.data),
   remove: (id) => api.delete(`/purchases/${id}`).then(r => r.data),
+  payCard: (data) => api.post('/purchases/pay-card', data).then(r => r.data),
 };
