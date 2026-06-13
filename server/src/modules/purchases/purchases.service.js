@@ -148,6 +148,20 @@ async function payCard(userId, { cardId, month, fromCardName }) {
         [userId, total, fromCardName,
           `Pago ciclo ${month} — ${pending.length} compra${pending.length > 1 ? 's' : ''}`]
       );
+
+      // Busca el id de la tarjeta de débito origen por nombre
+      const { rows: [fromCard] } = await client.query(
+        `SELECT id FROM cards WHERE user_id = $1 AND name = $2 LIMIT 1`,
+        [userId, fromCardName]
+      );
+
+      // Registra en transferencias: débito → crédito
+      await client.query(
+        `INSERT INTO transfers (user_id, from_card_id, to_card_id, amount, description, date)
+         VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)`,
+        [userId, fromCard?.id || null, cardId, total,
+          `Pago tarjeta — ciclo ${month}`]
+      );
     }
 
     await client.query('COMMIT');

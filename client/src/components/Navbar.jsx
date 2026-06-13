@@ -8,8 +8,6 @@ const links = [
   { to: '/cards', label: 'Tarjetas' },
   { to: '/transfers', label: 'Transferencias' },
   { to: '/purchases', label: 'Compras' },
-  { to: '/budgets', label: 'Presupuestos' },
-  { to: '/archive', label: 'Historial' },
   { to: '/calendar', label: 'Calendario' },
 ];
 

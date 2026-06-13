@@ -54,6 +54,7 @@ export default function Cards() {
       qc.invalidateQueries({ queryKey: ['purchases-pending'] });
       qc.invalidateQueries({ queryKey: ['purchases'] });
       qc.invalidateQueries({ queryKey: ['transactions'] });
+      qc.invalidateQueries({ queryKey: ['transfers'] });
       qc.invalidateQueries({ queryKey: ['account-balance'] });
       qc.invalidateQueries({ queryKey: ['byCategory'] });
       setPaying(null);
