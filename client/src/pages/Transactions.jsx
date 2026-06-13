@@ -8,7 +8,8 @@ import { Modal } from '../components/ui/Modal';
 import { formatCurrency } from '../utils/formatCurrency';
 import { fmtDate, today } from '../utils/dateHelpers';
 
-const CATEGORIES = ['Comida', 'Transporte', 'Renta', 'Salud', 'Entretenimiento', 'Ropa', 'Servicios', 'Otro'];
+const EXPENSE_CATEGORIES = ['Comida', 'Transporte', 'Renta', 'Salud', 'Entretenimiento', 'Ropa', 'Servicios', 'Otro'];
+const INCOME_CATEGORIES  = ['Salario', 'Transferencia', 'Regalo', 'Freelance', 'Venta', 'Otro'];
 
 const empty = { amount: '', type: 'gasto', category: 'Comida', method: '', description: '', date: today() };
 
@@ -93,12 +94,15 @@ export default function Transactions() {
             <Input label="Monto" type="number" step="0.01" value={form.amount} onChange={set('amount')} required />
             <Input label="Fecha" type="date" value={form.date} onChange={set('date')} required />
           </div>
-          <Select label="Tipo" value={form.type} onChange={set('type')}>
+          <Select label="Tipo" value={form.type} onChange={e => {
+            const t = e.target.value;
+            setForm(f => ({ ...f, type: t, category: t === 'gasto' ? EXPENSE_CATEGORIES[0] : INCOME_CATEGORIES[0] }));
+          }}>
             <option value="gasto">Gasto</option>
             <option value="ingreso">Ingreso</option>
           </Select>
           <Select label="Categoría" value={form.category} onChange={set('category')}>
-            {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            {(form.type === 'gasto' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map(c => <option key={c}>{c}</option>)}
           </Select>
           <Input label="Descripción" value={form.description} onChange={set('description')} />
           <Input label="Método de pago" value={form.method} onChange={set('method')} placeholder="Efectivo, débito..." />

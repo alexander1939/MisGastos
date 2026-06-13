@@ -120,12 +120,6 @@ export default function Calendar() {
     queryFn: cardsApi.list,
   });
 
-  // Compras del mes mostrado (para pintar en su fecha de compra)
-  const { data: purchasesRes } = useQuery({
-    queryKey: ['purchases-cal', month],
-    queryFn: () => purchasesApi.list({ from: monthFrom, to: monthTo, limit: 200 }),
-  });
-  const purchases = purchasesRes?.data || [];
 
   // Todas las compras pendientes/urgentes (para calcular deuda por tarjeta)
   const { data: allPurchasesRes } = useQuery({
@@ -153,9 +147,8 @@ export default function Calendar() {
     Object.fromEntries(cards.map(c => [c.id, c])),
   [cards]);
 
-  // --- Eventos virtuales: corte y pago (solo mes actual y solo si hay deuda) ---
+  // --- Eventos virtuales: corte y pago (cualquier mes con deuda) ---
   const cardEvents = useMemo(() => {
-    if (!isCurrentMonth) return []; // meses futuros/pasados = sin eventos de tarjeta
     const evs = [];
     for (const card of cards) {
       if (!pendingByCard[card.id]) continue; // sin deuda = sin eventos de tarjeta
@@ -200,33 +193,46 @@ export default function Calendar() {
     return evs;
   }, [cards, month, y, m, daysInMon, pendingByCard]);
 
-  // --- Eventos virtuales: compras del mes ---
+  // --- Eventos virtuales: compras cuyo mes de pago = mes mostrado ---
   const purchaseEvents = useMemo(() => {
-    return purchases.map(p => {
-      const card = cardById[p.card_id];
-      const billing = p.pay_month
-        ? { label: new Date(p.pay_month + '-15').toLocaleString('es-MX', { month: 'long', year: 'numeric' }), cycle: null }
-        : getPayMonth(p.date, card);
-      const noteparts = [];
-      if (p.card_name) noteparts.push(`Tarjeta: ${p.card_name}`);
-      if (billing) noteparts.push(`Se paga en ${billing.label}`);
-      return {
-        id: `vpurch-${p.id}`,
-        title: p.description,
-        type: 'compra',
-        date: p.date,
-        done: p.status === 'pagado' || p.status === 'archivado',
-        auto_generated: true,
-        virtual: true,
-        urgency: p.status === 'urgente' ? 'urgente' : null,
-        amount: p.amount,
-        note: noteparts.join(' · ') || null,
-        status: p.status,
-        card_color: p.card_color,
-        billingCycle: billing?.cycle || null,
-      };
-    });
-  }, [purchases, cardById]);
+    return allPurchases
+      .filter(p => {
+        if (p.status === 'archivado') return false;
+        const card = cardById[p.card_id];
+        return effectivePayMonth(p, card) === month;
+      })
+      .map(p => {
+        const card = cardById[p.card_id];
+        const purchaseMonth = p.date.slice(0, 7);
+        // Compra del mismo mes → fecha de compra; de otro mes (ciclo anterior) → fecha de pago
+        let eventDate = p.date;
+        if (purchaseMonth !== month && card?.pay_day) {
+          const payDay = Math.min(card.pay_day, daysInMon);
+          eventDate = dayStr(y, m, payDay);
+        }
+        const billing = p.pay_month
+          ? { label: new Date(p.pay_month + '-15').toLocaleString('es-MX', { month: 'long', year: 'numeric' }), cycle: null }
+          : getPayMonth(p.date, card);
+        const noteparts = [];
+        if (p.card_name) noteparts.push(`Tarjeta: ${p.card_name}`);
+        if (purchaseMonth !== month) noteparts.push(`Comprado: ${fmtDate(p.date)}`);
+        return {
+          id: `vpurch-${p.id}`,
+          title: p.description,
+          type: 'compra',
+          date: eventDate,
+          done: p.status === 'pagado' || p.status === 'archivado',
+          auto_generated: true,
+          virtual: true,
+          urgency: p.status === 'urgente' ? 'urgente' : null,
+          amount: p.amount,
+          note: noteparts.join(' · ') || null,
+          status: p.status,
+          card_color: p.card_color,
+          billingCycle: billing?.cycle || null,
+        };
+      });
+  }, [allPurchases, cardById, month, y, m, daysInMon]);
 
   // --- Combinados ---
   const allEvents = useMemo(
