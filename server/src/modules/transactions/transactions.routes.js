@@ -16,6 +16,7 @@ const schema = z.object({
 router.use(auth);
 router.get('/', ctrl.list);
 router.get('/summary', ctrl.summary);
+router.get('/account-balance', ctrl.accountBalance);
 router.post('/', validate(schema), ctrl.create);
 router.post('/import', ctrl.importCsv);
 router.put('/:id', ctrl.update);

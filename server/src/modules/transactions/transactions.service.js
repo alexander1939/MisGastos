@@ -124,4 +124,19 @@ async function importCsv(userId, rows) {
   }
 }
 
-module.exports = { list, summary, create, update, remove, importCsv };
+async function accountBalance(userId) {
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE(method, 'Sin cuenta') AS account,
+       SUM(CASE WHEN type = 'ingreso' THEN amount ELSE 0 END) AS ingresos,
+       SUM(CASE WHEN type = 'gasto'   THEN amount ELSE 0 END) AS gastos
+     FROM transactions
+     WHERE user_id = $1 AND method IS NOT NULL AND method != ''
+     GROUP BY method
+     ORDER BY ingresos DESC`,
+    [userId]
+  );
+  return rows;
+}
+
+module.exports = { list, summary, create, update, remove, importCsv, accountBalance };

@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from '../hooks/useTransactions';
 import { usePeriod } from '../hooks/usePeriod';
 import { cardsApi } from '../api/cards';
+import { transactionsApi } from '../api/transactions';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { formatCurrency } from '../utils/formatCurrency';
 import { fmtDate, today } from '../utils/dateHelpers';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const EXPENSE_CATEGORIES = ['Comida', 'Transporte', 'Renta', 'Salud', 'Entretenimiento', 'Ropa', 'Servicios', 'Otro'];
 const INCOME_CATEGORIES  = ['Salario', 'Transferencia', 'Regalo', 'Freelance', 'Venta', 'Otro'];
@@ -30,6 +32,25 @@ export default function Transactions() {
     queryFn: cardsApi.list,
   });
   const debitCards = cards.filter(c => c.type === 'debito');
+
+  const { data: balanceRaw = [] } = useQuery({
+    queryKey: ['account-balance'],
+    queryFn: transactionsApi.accountBalance,
+  });
+
+  const balanceData = useMemo(() => {
+    const cardNames = new Set(debitCards.map(c => c.name));
+    cardNames.add('Efectivo físico');
+    return balanceRaw
+      .filter(r => cardNames.has(r.account))
+      .map(r => ({
+        account: r.account,
+        saldo: parseFloat(r.ingresos) - parseFloat(r.gastos),
+        ingresos: parseFloat(r.ingresos),
+        gastos: parseFloat(r.gastos),
+        color: debitCards.find(c => c.name === r.account)?.color || '#10b981',
+      }));
+  }, [balanceRaw, debitCards]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -79,6 +100,41 @@ export default function Transactions() {
         <h1 className="text-2xl font-bold">Movimientos</h1>
         <Button onClick={() => setOpen(true)}>+ Agregar</Button>
       </div>
+
+      {balanceData.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-medium text-gray-400 mb-4">Saldo por cuenta</h2>
+          <div className="flex gap-6 mb-3 flex-wrap">
+            {balanceData.map(d => (
+              <div key={d.account} className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                <div>
+                  <p className="text-xs text-gray-400">{d.account}</p>
+                  <p className={`text-sm font-bold ${d.saldo >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {formatCurrency(d.saldo)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={balanceData} barCategoryGap="30%">
+              <XAxis dataKey="account" tick={{ fontSize: 11, fill: '#9ca3af' }} />
+              <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
+              <Tooltip
+                formatter={(v, name) => [formatCurrency(v), name === 'saldo' ? 'Saldo' : name]}
+                contentStyle={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: 8 }}
+                labelStyle={{ color: '#e5e7eb' }}
+              />
+              <Bar dataKey="saldo" radius={[4, 4, 0, 0]}>
+                {balanceData.map((d, i) => (
+                  <Cell key={i} fill={d.saldo >= 0 ? d.color : '#ef4444'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       <div className="flex gap-2">
         {periods.map(p => (

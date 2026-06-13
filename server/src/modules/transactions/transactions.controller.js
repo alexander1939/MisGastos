@@ -42,4 +42,11 @@ async function importCsv(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { list, summary, create, update, remove, importCsv };
+async function accountBalance(req, res, next) {
+  try {
+    const result = await service.accountBalance(req.userId);
+    res.json(result);
+  } catch (err) { next(err); }
+}
+
+module.exports = { list, summary, create, update, remove, importCsv, accountBalance };
