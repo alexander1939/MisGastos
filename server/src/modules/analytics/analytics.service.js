@@ -13,23 +13,53 @@ async function cached(key, fn) {
 
 async function byCategory(userId, { period } = {}) {
   return cached(`analytics:cat:${userId}:${period || 'all'}`, async () => {
-    const df = period === 'mes'    ? `AND date >= DATE_TRUNC('month', NOW())`
-             : period === 'semana' ? `AND date >= NOW() - INTERVAL '7 days'`
-             : '';
-    const { rows } = await pool.query(
-      `SELECT category, SUM(total) AS total
-       FROM (
-         SELECT category, amount AS total
-         FROM transactions
-         WHERE user_id = $1 AND type = 'gasto' ${df}
-         UNION ALL
-         SELECT category, amount AS total
-         FROM purchases
-         WHERE user_id = $1 AND status != 'archivado' ${df}
-       ) sub
-       GROUP BY category ORDER BY total DESC`,
-      [userId]
-    );
+    let rows;
+
+    if (period === 'mes') {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      ({ rows } = await pool.query(
+        `SELECT category, SUM(total) AS total
+         FROM (
+           SELECT category, amount AS total
+           FROM transactions
+           WHERE user_id = $1 AND type = 'gasto'
+             AND TO_CHAR(date, 'YYYY-MM') = $2
+           UNION ALL
+           SELECT p.category, p.amount AS total
+           FROM purchases p
+           LEFT JOIN cards c ON c.id = p.card_id
+           WHERE p.user_id = $1
+             AND p.status != 'archivado'
+             AND COALESCE(
+               p.pay_month,
+               CASE
+                 WHEN EXTRACT(DAY FROM p.date) <= COALESCE(c.cut_day, 31)
+                   THEN TO_CHAR(p.date, 'YYYY-MM')
+                 ELSE TO_CHAR(p.date + INTERVAL '1 month', 'YYYY-MM')
+               END
+             ) = $2
+         ) sub
+         GROUP BY category ORDER BY total DESC`,
+        [userId, currentMonth]
+      ));
+    } else {
+      const df = period === 'semana' ? `AND date >= NOW() - INTERVAL '7 days'` : '';
+      ({ rows } = await pool.query(
+        `SELECT category, SUM(total) AS total
+         FROM (
+           SELECT category, amount AS total
+           FROM transactions
+           WHERE user_id = $1 AND type = 'gasto' ${df}
+           UNION ALL
+           SELECT category, amount AS total
+           FROM purchases
+           WHERE user_id = $1 AND status != 'archivado' ${df}
+         ) sub
+         GROUP BY category ORDER BY total DESC`,
+        [userId]
+      ));
+    }
+
     return rows;
   });
 }
