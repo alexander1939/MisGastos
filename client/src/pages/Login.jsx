@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { authApi } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
 import { Input } from '../components/ui/Input';
@@ -8,6 +9,7 @@ import { Button } from '../components/ui/Button';
 export default function Login() {
   const navigate = useNavigate();
   const setAuth = useAuthStore(s => s.setAuth);
+  const qc = useQueryClient();
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ email: '', password: '', name: '', salary: '' });
   const [error, setError] = useState('');
@@ -24,6 +26,7 @@ export default function Login() {
         ? await authApi.login({ email: form.email, password: form.password })
         : await authApi.register({ ...form, salary: parseFloat(form.salary) || 0 });
       setAuth(data.accessToken, data.user);
+      qc.clear();
       navigate('/');
     } catch (err) {
       setError(err.response?.data?.error || 'Error al iniciar sesión');

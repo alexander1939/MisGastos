@@ -28,10 +28,11 @@ export default function Cards() {
   const debitCards = useMemo(() => (cards || []).filter(c => c.type === 'debito'), [cards]);
 
   // Deuda pendiente del mes actual por tarjeta de crédito
-  const { data: allPurchases = [] } = useQuery({
+  const { data: allPurchasesRes } = useQuery({
     queryKey: ['purchases-pending'],
-    queryFn: () => purchasesApi.list({ limit: 500 }).then(r => r.data),
+    queryFn: () => purchasesApi.list({ limit: 500 }),
   });
+  const allPurchases = allPurchasesRes?.data || [];
   const cardById = useMemo(() =>
     Object.fromEntries((cards || []).map(c => [c.id, c])), [cards]);
   const month = currentMonth();
