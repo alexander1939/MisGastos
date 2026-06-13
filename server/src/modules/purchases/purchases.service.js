@@ -140,22 +140,13 @@ async function payCard(userId, { cardId, month, fromCardName }) {
       [pending.map(p => p.id), userId]
     );
 
-    // Registra el gasto en la tarjeta de débito origen
+    // Registra en transferencias: débito → crédito (el balance se maneja aquí, sin crear transaction)
     if (fromCardName) {
-      await client.query(
-        `INSERT INTO transactions (user_id, amount, type, category, method, description, date)
-         VALUES ($1, $2, 'gasto', 'Pago tarjeta', $3, $4, CURRENT_DATE)`,
-        [userId, total, fromCardName,
-          `Pago ciclo ${month} — ${pending.length} compra${pending.length > 1 ? 's' : ''}`]
-      );
-
-      // Busca el id de la tarjeta de débito origen por nombre
       const { rows: [fromCard] } = await client.query(
         `SELECT id FROM cards WHERE user_id = $1 AND name = $2 LIMIT 1`,
         [userId, fromCardName]
       );
 
-      // Registra en transferencias: débito → crédito
       await client.query(
         `INSERT INTO transfers (user_id, from_card_id, to_card_id, amount, description, date)
          VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)`,

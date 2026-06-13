@@ -36,12 +36,20 @@ export default function Transfers() {
 
   const create = useMutation({
     mutationFn: transfersApi.create,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['transfers'] }); setOpen(false); setForm(empty); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transfers'] });
+      qc.invalidateQueries({ queryKey: ['account-balance'] });
+      setOpen(false);
+      setForm(empty);
+    },
   });
 
   const remove = useMutation({
     mutationFn: transfersApi.remove,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['transfers'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transfers'] });
+      qc.invalidateQueries({ queryKey: ['account-balance'] });
+    },
   });
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));

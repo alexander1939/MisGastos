@@ -127,13 +127,38 @@ async function importCsv(userId, rows) {
 async function accountBalance(userId) {
   const { rows } = await pool.query(
     `SELECT
-       COALESCE(method, 'Sin cuenta') AS account,
-       SUM(CASE WHEN type = 'ingreso' THEN amount ELSE 0 END) AS ingresos,
-       SUM(CASE WHEN type = 'gasto'   THEN amount ELSE 0 END) AS gastos
-     FROM transactions
-     WHERE user_id = $1 AND method IS NOT NULL AND method != ''
-     GROUP BY method
-     ORDER BY ingresos DESC`,
+       account,
+       SUM(ingresos)  AS ingresos,
+       SUM(gastos)    AS gastos,
+       SUM(recibido)  AS recibido,
+       SUM(enviado)   AS enviado
+     FROM (
+       SELECT
+         method AS account,
+         SUM(CASE WHEN type='ingreso' THEN amount ELSE 0 END) AS ingresos,
+         SUM(CASE WHEN type='gasto'   THEN amount ELSE 0 END) AS gastos,
+         0 AS recibido,
+         0 AS enviado
+       FROM transactions
+       WHERE user_id = $1 AND method IS NOT NULL AND method != ''
+       GROUP BY method
+
+       UNION ALL
+
+       SELECT c.name AS account, 0, 0, t.amount AS recibido, 0
+       FROM transfers t
+       JOIN cards c ON c.id = t.to_card_id
+       WHERE t.user_id = $1
+
+       UNION ALL
+
+       SELECT c.name AS account, 0, 0, 0, t.amount AS enviado
+       FROM transfers t
+       JOIN cards c ON c.id = t.from_card_id
+       WHERE t.user_id = $1
+     ) sub
+     GROUP BY account
+     ORDER BY (SUM(ingresos) + SUM(recibido) - SUM(gastos) - SUM(enviado)) DESC`,
     [userId]
   );
   return rows;

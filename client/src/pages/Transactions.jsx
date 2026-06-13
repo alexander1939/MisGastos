@@ -45,9 +45,8 @@ export default function Transactions() {
       .filter(r => cardNames.has(r.account))
       .map(r => ({
         account: r.account,
-        saldo: parseFloat(r.ingresos) - parseFloat(r.gastos),
-        ingresos: parseFloat(r.ingresos),
-        gastos: parseFloat(r.gastos),
+        saldo: parseFloat(r.ingresos) + parseFloat(r.recibido || 0)
+             - parseFloat(r.gastos)   - parseFloat(r.enviado  || 0),
         color: debitCards.find(c => c.name === r.account)?.color || '#10b981',
       }));
   }, [balanceRaw, debitCards]);

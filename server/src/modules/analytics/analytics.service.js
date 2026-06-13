@@ -23,6 +23,7 @@ async function byCategory(userId, { period } = {}) {
            SELECT category, amount AS total
            FROM transactions
            WHERE user_id = $1 AND type = 'gasto'
+             AND category != 'Pago tarjeta'
              AND TO_CHAR(date, 'YYYY-MM') = $2
            UNION ALL
            SELECT p.category, p.amount AS total
@@ -88,6 +89,7 @@ async function trend(userId, { days = 30 } = {}) {
                 CASE WHEN type='ingreso' THEN amount ELSE 0 END AS ingresos
          FROM transactions
          WHERE user_id = $1 AND date >= NOW() - INTERVAL '${d} days'
+           AND category != 'Pago tarjeta'
          UNION ALL
          SELECT date, amount AS gastos, 0 AS ingresos
          FROM purchases
@@ -129,6 +131,7 @@ async function monthlyComparison(userId, { months = 6 } = {}) {
                 CASE WHEN type='gasto'   THEN amount ELSE 0 END AS gastos
          FROM transactions
          WHERE user_id = $1
+           AND category != 'Pago tarjeta'
            AND date >= DATE_TRUNC('month', NOW()) - INTERVAL '${interval}'
          UNION ALL
          SELECT TO_CHAR(date,'YYYY-MM') AS month, 0 AS ingresos, amount AS gastos
