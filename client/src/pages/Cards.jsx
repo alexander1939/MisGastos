@@ -109,19 +109,24 @@ export default function Cards() {
       <Modal open={open} onClose={closeModal} title={editing ? `Editar ${editing.name}` : 'Nueva tarjeta'}>
         <form onSubmit={submit} className="space-y-4">
           <Input label="Título" value={form.name} onChange={set('name')} required />
-          <Select label="Tipo" value={form.type} onChange={set('type')}>
+          <Select label="Tipo" value={form.type} onChange={e => {
+            const t = e.target.value;
+            setForm(f => ({ ...f, type: t, credit_limit: '', cut_day: '', pay_day: '' }));
+          }}>
             <option value="credito">Crédito</option>
             <option value="debito">Débito</option>
             <option value="transporte">Transporte</option>
           </Select>
-          <div className="flex items-center gap-3">
-            <Input label="Color" type="color" value={form.color} onChange={set('color')} className="h-10 cursor-pointer" />
-            <Input label="Límite de crédito" type="number" value={form.credit_limit} onChange={set('credit_limit')} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Día de corte" type="number" min="1" max="31" value={form.cut_day} onChange={set('cut_day')} />
-            <Input label="Día de pago" type="number" min="1" max="31" value={form.pay_day} onChange={set('pay_day')} />
-          </div>
+          <Input label="Color" type="color" value={form.color} onChange={set('color')} className="h-10 cursor-pointer" />
+          {form.type === 'credito' && (
+            <>
+              <Input label="Límite de crédito" type="number" value={form.credit_limit} onChange={set('credit_limit')} />
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Día de corte" type="number" min="1" max="31" value={form.cut_day} onChange={set('cut_day')} />
+                <Input label="Día de pago" type="number" min="1" max="31" value={form.pay_day} onChange={set('pay_day')} />
+              </div>
+            </>
+          )}
           <div className="flex gap-3 justify-end">
             <Button type="button" variant="secondary" onClick={closeModal}>Cancelar</Button>
             <Button type="submit" disabled={isPending}>Guardar</Button>

@@ -8,9 +8,9 @@ const schema = z.object({
   name: z.string().min(1),
   type: z.enum(['credito', 'debito', 'transporte']),
   color: z.string().optional(),
-  credit_limit: z.number().optional(),
-  cut_day: z.number().int().min(1).max(31).optional(),
-  pay_day: z.number().int().min(1).max(31).optional(),
+  credit_limit: z.number().nullable().optional(),
+  cut_day: z.number().int().min(1).max(31).nullable().optional(),
+  pay_day: z.number().int().min(1).max(31).nullable().optional(),
 });
 
 router.use(auth);
