@@ -5,6 +5,7 @@ const invalidateCards = (userId) => redis.del(
   `analytics:cards:${userId}`,
   `analytics:cat:${userId}:mes`,
   `analytics:cat:${userId}:semana`,
+  `analytics:cat:${userId}:all`,
   `analytics:monthly:${userId}:6`
 );
 

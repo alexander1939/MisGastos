@@ -38,8 +38,8 @@ export default function Dashboard() {
     queryFn: () => analyticsApi.trend({ days: 30 }),
   });
   const { data: byCategory } = useQuery({
-    queryKey: ['byCategory'],
-    queryFn: () => analyticsApi.byCategory({}),
+    queryKey: ['byCategory', 'mes'],
+    queryFn: () => analyticsApi.byCategory({ period: 'mes' }),
   });
   const { data: monthly } = useQuery({
     queryKey: ['monthly'],
@@ -165,6 +165,10 @@ export default function Dashboard() {
     cardTotals.reduce((s, c) => s + c.total, 0),
   [cardTotals]);
 
+  const byCategoryData = useMemo(() =>
+    (byCategory || []).map(r => ({ ...r, total: parseFloat(r.total) || 0 })),
+  [byCategory]);
+
   // Historial mensual — formatea mes para mostrar
   const monthlyData = useMemo(() => (monthly || []).map(r => ({
     ...r,
@@ -230,11 +234,11 @@ export default function Dashboard() {
 
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <h2 className="text-sm font-medium text-gray-400 mb-4">Gastos por categoría</h2>
-          {byCategory?.length ? (
+          {byCategoryData.length ? (
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
-                <Pie data={byCategory} dataKey="total" nameKey="category" cx="50%" cy="50%" outerRadius={80} label={({ category }) => category}>
-                  {byCategory.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                <Pie data={byCategoryData} dataKey="total" nameKey="category" cx="50%" cy="50%" outerRadius={80} label={({ category }) => category}>
+                  {byCategoryData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Tooltip formatter={v => formatCurrency(v)} />
               </PieChart>

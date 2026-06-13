@@ -5,6 +5,7 @@ function invalidateAnalytics(userId) {
   return redis.del(
     `analytics:cat:${userId}:mes`,
     `analytics:cat:${userId}:semana`,
+    `analytics:cat:${userId}:all`,
     `analytics:method:${userId}:mes`,
     `analytics:trend:${userId}:30`,
     `analytics:monthly:${userId}:6`
