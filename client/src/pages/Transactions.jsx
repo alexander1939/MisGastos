@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { useTransactions, useCreateTransaction, useDeleteTransaction } from '../hooks/useTransactions';
+import { useQuery } from '@tanstack/react-query';
+import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from '../hooks/useTransactions';
 import { usePeriod } from '../hooks/usePeriod';
+import { cardsApi } from '../api/cards';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
@@ -16,18 +18,59 @@ const empty = { amount: '', type: 'gasto', category: 'Comida', method: '', descr
 export default function Transactions() {
   const { period, setPeriod, periods } = usePeriod();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty);
   const { data, isLoading } = useTransactions({ period });
   const create = useCreateTransaction();
+  const update = useUpdateTransaction();
   const remove = useDeleteTransaction();
+
+  const { data: cards = [] } = useQuery({
+    queryKey: ['cards'],
+    queryFn: cardsApi.list,
+  });
+  const debitCards = cards.filter(c => c.type === 'debito');
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
+  function openEdit(t) {
+    setEditing(t);
+    setForm({
+      amount: t.amount,
+      type: t.type,
+      category: t.category,
+      method: t.method || '',
+      description: t.description || '',
+      date: t.date.slice(0, 10),
+    });
+    setOpen(true);
+  }
+
+  function closeModal() {
+    setOpen(false);
+    setEditing(null);
+    setForm(empty);
+  }
+
   async function submit(e) {
     e.preventDefault();
-    await create.mutateAsync({ ...form, amount: parseFloat(form.amount) });
-    setOpen(false);
-    setForm(empty);
+    const payload = { ...form, amount: parseFloat(form.amount) };
+    if (editing) {
+      await update.mutateAsync({ id: editing.id, ...payload });
+    } else {
+      await create.mutateAsync(payload);
+    }
+    closeModal();
+  }
+
+  function handleTypeChange(e) {
+    const t = e.target.value;
+    setForm(f => ({
+      ...f,
+      type: t,
+      category: t === 'gasto' ? EXPENSE_CATEGORIES[0] : INCOME_CATEGORIES[0],
+      method: t === 'ingreso' ? 'Efectivo físico' : '',
+    }));
   }
 
   return (
@@ -63,6 +106,7 @@ export default function Transactions() {
                 <th className="text-left px-4 py-3 text-gray-500 font-medium">Fecha</th>
                 <th className="text-left px-4 py-3 text-gray-500 font-medium">Descripción</th>
                 <th className="text-left px-4 py-3 text-gray-500 font-medium">Categoría</th>
+                <th className="text-left px-4 py-3 text-gray-500 font-medium">Cuenta</th>
                 <th className="text-left px-4 py-3 text-gray-500 font-medium">Tipo</th>
                 <th className="text-right px-4 py-3 text-gray-500 font-medium">Monto</th>
                 <th className="px-4 py-3" />
@@ -74,11 +118,13 @@ export default function Transactions() {
                   <td className="px-4 py-3 text-gray-400">{fmtDate(t.date)}</td>
                   <td className="px-4 py-3">{t.description || '—'}</td>
                   <td className="px-4 py-3 text-gray-400">{t.category}</td>
+                  <td className="px-4 py-3 text-gray-400">{t.method || '—'}</td>
                   <td className="px-4 py-3"><Badge label={t.type} /></td>
                   <td className={`px-4 py-3 text-right font-medium ${t.type === 'ingreso' ? 'text-green-400' : 'text-red-400'}`}>
                     {t.type === 'gasto' ? '-' : '+'}{formatCurrency(t.amount)}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 flex gap-2 justify-end">
+                    <button onClick={() => openEdit(t)} className="text-gray-600 hover:text-blue-400 text-xs">✎</button>
                     <button onClick={() => remove.mutate(t.id)} className="text-gray-600 hover:text-red-400 text-xs">×</button>
                   </td>
                 </tr>
@@ -88,27 +134,35 @@ export default function Transactions() {
         )}
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Nuevo movimiento">
+      <Modal open={open} onClose={closeModal} title={editing ? 'Editar movimiento' : 'Nuevo movimiento'}>
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Input label="Monto" type="number" step="0.01" value={form.amount} onChange={set('amount')} required />
             <Input label="Fecha" type="date" value={form.date} onChange={set('date')} required />
           </div>
-          <Select label="Tipo" value={form.type} onChange={e => {
-            const t = e.target.value;
-            setForm(f => ({ ...f, type: t, category: t === 'gasto' ? EXPENSE_CATEGORIES[0] : INCOME_CATEGORIES[0] }));
-          }}>
+          <Select label="Tipo" value={form.type} onChange={handleTypeChange}>
             <option value="gasto">Gasto</option>
             <option value="ingreso">Ingreso</option>
           </Select>
           <Select label="Categoría" value={form.category} onChange={set('category')}>
             {(form.type === 'gasto' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map(c => <option key={c}>{c}</option>)}
           </Select>
+
+          {form.type === 'ingreso' ? (
+            <Select label="Entró a" value={form.method} onChange={set('method')}>
+              <option value="Efectivo físico">Efectivo físico</option>
+              {debitCards.map(c => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+            </Select>
+          ) : (
+            <Input label="Método de pago" value={form.method} onChange={set('method')} placeholder="Efectivo, débito..." />
+          )}
+
           <Input label="Descripción" value={form.description} onChange={set('description')} />
-          <Input label="Método de pago" value={form.method} onChange={set('method')} placeholder="Efectivo, débito..." />
           <div className="flex gap-3 justify-end">
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button type="submit" disabled={create.isPending}>Guardar</Button>
+            <Button type="button" variant="secondary" onClick={closeModal}>Cancelar</Button>
+            <Button type="submit" disabled={create.isPending || update.isPending}>Guardar</Button>
           </div>
         </form>
       </Modal>

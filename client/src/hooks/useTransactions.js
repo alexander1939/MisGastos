@@ -32,6 +32,17 @@ export function useCreateTransaction() {
   });
 }
 
+export function useUpdateTransaction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }) => transactionsApi.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] });
+      invalidateDashboard(qc);
+    },
+  });
+}
+
 export function useDeleteTransaction() {
   const qc = useQueryClient();
   return useMutation({
