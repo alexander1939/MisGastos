@@ -123,9 +123,9 @@ Esta lógica se usa consistentemente en:
 
 **POST /api/purchases/pay-card** — paga un ciclo completo de tarjeta de crédito:
 - Marca todas las compras `pendiente`/`urgente` con `effective_pay_month = month` como `pagado`
-- Registra un gasto en `transactions` (method = tarjeta débito origen)
-- Registra una transferencia en `transfers` (from_card → credit_card)
+- Registra una transferencia en `transfers` (from_card_débito → credit_card) — **NO crea transaction de gasto**; el balance de la cuenta débito se maneja vía transfers
 - Body: `{ cardId, month, fromCardName }`
+- **IMPORTANTE:** No usar `category = 'Pago tarjeta'` en transactions. Los analytics excluyen esa categoría para evitar doble conteo con las purchases.
 
 **GET /api/transactions/account-balance** — saldo por cuenta (tarjetas débito + efectivo):
 - Combina `transactions` (ingresos/gastos por method) + `transfers` (recibido/enviado por card)
@@ -133,6 +133,9 @@ Esta lógica se usa consistentemente en:
 
 **GET /api/analytics/by-category?period=mes** — gastos del mes actual por categoría:
 - Para purchases: filtra por `effective_pay_month` (COALESCE de pay_month o cálculo por cut_day), no por fecha de compra
+- Excluye transactions con `category = 'Pago tarjeta'` (las purchases ya se cuentan)
+
+**Analytics en general** — `trend`, `byCategory`, `monthlyComparison` excluyen `category = 'Pago tarjeta'` de transactions para evitar doble conteo. Las transferencias entre tarjetas (tabla `transfers`) tampoco se incluyen — mover dinero entre cuentas propias no es ingreso ni gasto real.
 
 ## Páginas del cliente
 

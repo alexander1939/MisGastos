@@ -46,7 +46,7 @@ docker-compose up
 - Crédito: nombre, color, límite, día de corte, día de pago
 - Débito / Transporte: solo nombre y color
 - Muestra deuda pendiente del ciclo actual por tarjeta de crédito
-- **Botón "Pagar"**: marca todas las compras del ciclo como pagadas, registra gasto en la tarjeta débito origen y crea una transferencia automáticamente
+- **Botón "Pagar"**: marca todas las compras del ciclo como pagadas y registra una transferencia (débito → crédito) automáticamente. No crea transacción de gasto separada para evitar doble conteo con las purchases
 
 ### Compras
 - Registro de compras a crédito con ciclo de cobro
@@ -89,6 +89,13 @@ Saldo = Ingresos (transactions con method=cuenta)
       - Gastos   (transactions con method=cuenta)
       - Enviado  (transfers donde from_card = cuenta)
 ```
+
+Las transferencias entre tarjetas propias no afectan las gráficas de tendencia ni analíticas — solo el saldo por cuenta. Mover dinero entre tus propias cuentas no es un gasto real.
+
+## Qué NO se cuenta como gasto en analytics
+
+- Transferencias entre tarjetas propias (tabla `transfers`)
+- Pagos de tarjeta de crédito — las purchases ya están contadas; el pago solo cambia su status a `pagado` y genera una transferencia
 
 ## Variables de entorno requeridas
 
