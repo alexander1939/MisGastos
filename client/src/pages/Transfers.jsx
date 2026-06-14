@@ -8,7 +8,7 @@ import { Modal } from '../components/ui/Modal';
 import { formatCurrency } from '../utils/formatCurrency';
 import { fmtDate, today } from '../utils/dateHelpers';
 
-const empty = { from_card_id: '', to_card_id: '', amount: '', date: today(), description: '' };
+const empty = { type: 'transfer', from_card_id: '', to_card_id: '', amount: '', date: today(), description: '' };
 
 function CardDot({ color, name }) {
   return (
@@ -33,6 +33,8 @@ export default function Transfers() {
     queryKey: ['cards'],
     queryFn: cardsApi.list,
   });
+
+  const isRetiro = form.type === 'retiro';
 
   const create = useMutation({
     mutationFn: transfersApi.create,
@@ -106,7 +108,13 @@ export default function Transfers() {
                   </td>
                   <td className="px-4 py-3 text-gray-600">→</td>
                   <td className="px-4 py-3">
-                    <CardDot color={t.to_card_color} name={t.to_card_name} />
+                    {t.to_card_id == null && t.from_card_id != null ? (
+                      <span className="inline-flex items-center gap-1.5 text-amber-400 text-xs font-medium">
+                        <span>↑</span> Retiro
+                      </span>
+                    ) : (
+                      <CardDot color={t.to_card_color} name={t.to_card_name} />
+                    )}
                   </td>
                   <td className="px-4 py-3 text-gray-400">{t.description || '—'}</td>
                   <td className="px-4 py-3 text-right font-semibold text-primary-300">
@@ -128,27 +136,61 @@ export default function Transfers() {
       )}
 
       {/* Modal */}
-      <Modal open={open} onClose={() => setOpen(false)} title="Nueva transferencia">
+      <Modal open={open} onClose={() => { setOpen(false); setForm(empty); }} title="Nuevo movimiento">
         <form
           onSubmit={e => {
             e.preventDefault();
             create.mutate({
-              ...form,
               from_card_id: form.from_card_id ? Number(form.from_card_id) : null,
-              to_card_id:   form.to_card_id   ? Number(form.to_card_id)   : null,
+              to_card_id:   isRetiro ? null : (form.to_card_id ? Number(form.to_card_id) : null),
               amount: parseFloat(form.amount),
+              date: form.date,
+              description: form.description,
             });
           }}
           className="space-y-4"
         >
-          <Select label="De (tarjeta origen)" value={form.from_card_id} onChange={set('from_card_id')}>
-            <option value="">— Externo / Banco —</option>
+          {/* Toggle tipo */}
+          <div className="flex rounded-lg overflow-hidden border border-gray-700 text-sm font-medium">
+            <button
+              type="button"
+              onClick={() => setForm(f => ({ ...f, type: 'transfer' }))}
+              className={`flex-1 py-2 transition-colors ${!isRetiro ? 'bg-primary-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}`}
+            >
+              Transferencia
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm(f => ({ ...f, type: 'retiro' }))}
+              className={`flex-1 py-2 transition-colors ${isRetiro ? 'bg-amber-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}`}
+            >
+              Retiro
+            </button>
+          </div>
+
+          <Select
+            label={isRetiro ? 'De (tarjeta a retirar)' : 'De (tarjeta origen)'}
+            value={form.from_card_id}
+            onChange={set('from_card_id')}
+            required={isRetiro}
+          >
+            {!isRetiro && <option value="">— Externo / Banco —</option>}
             {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
-          <Select label="Hacia (tarjeta destino)" value={form.to_card_id} onChange={set('to_card_id')}>
-            <option value="">— Externo / Banco —</option>
-            {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </Select>
+
+          {!isRetiro && (
+            <Select label="Hacia (tarjeta destino)" value={form.to_card_id} onChange={set('to_card_id')}>
+              <option value="">— Externo / Banco —</option>
+              {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          )}
+
+          {isRetiro && (
+            <p className="text-xs text-amber-400/80 -mt-1">
+              El monto se descontará del saldo de la tarjeta seleccionada.
+            </p>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <Input
               label="Monto"
@@ -163,7 +205,7 @@ export default function Transfers() {
           </div>
           <Input label="Descripción (opcional)" value={form.description} onChange={set('description')} />
           <div className="flex gap-3 justify-end">
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="secondary" onClick={() => { setOpen(false); setForm(empty); }}>Cancelar</Button>
             <Button type="submit" disabled={create.isPending}>Guardar</Button>
           </div>
         </form>
