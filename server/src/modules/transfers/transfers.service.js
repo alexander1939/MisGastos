@@ -16,10 +16,11 @@ async function list(userId) {
 }
 
 async function create(userId, data) {
+  const type = data.type === 'retiro' ? 'retiro' : 'transfer';
   const { rows } = await pool.query(
-    `INSERT INTO transfers (user_id, from_card_id, to_card_id, amount, description, date)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [userId, data.from_card_id || null, data.to_card_id || null, data.amount, data.description || null, data.date]
+    `INSERT INTO transfers (user_id, from_card_id, to_card_id, amount, description, date, type)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [userId, data.from_card_id || null, data.to_card_id || null, data.amount, data.description || null, data.date, type]
   );
   return rows[0];
 }

@@ -108,13 +108,9 @@ export default function Transfers() {
                   </td>
                   <td className="px-4 py-3 text-gray-600">→</td>
                   <td className="px-4 py-3">
-                    {t.to_card_id == null && t.from_card_id != null ? (
-                      <span className="inline-flex items-center gap-1.5 text-amber-400 text-xs font-medium">
-                        <span>↑</span> Retiro
-                      </span>
-                    ) : (
-                      <CardDot color={t.to_card_color} name={t.to_card_name} />
-                    )}
+                    {t.type === 'retiro'
+                      ? <span className="inline-flex items-center gap-1.5 text-amber-400 font-medium">↓ Retiro</span>
+                      : <CardDot color={t.to_card_color} name={t.to_card_name} />}
                   </td>
                   <td className="px-4 py-3 text-gray-400">{t.description || '—'}</td>
                   <td className="px-4 py-3 text-right font-semibold text-primary-300">
@@ -141,6 +137,7 @@ export default function Transfers() {
           onSubmit={e => {
             e.preventDefault();
             create.mutate({
+              type: isRetiro ? 'retiro' : 'transfer',
               from_card_id: form.from_card_id ? Number(form.from_card_id) : null,
               to_card_id:   isRetiro ? null : (form.to_card_id ? Number(form.to_card_id) : null),
               amount: parseFloat(form.amount),
