@@ -225,7 +225,7 @@ export default function Purchases() {
                       {pm ? (
                         <div>
                           <p className="text-xs font-medium text-gray-200 capitalize">{pm.label}</p>
-                          <p className="text-[11px] text-gray-500">límite {fmtDate(pm.payDate)}</p>
+                          {pm.payDate && <p className="text-[11px] text-gray-500">límite {fmtDate(pm.payDate)}</p>}
                         </div>
                       ) : <span className="text-gray-600">—</span>}
                     </td>
