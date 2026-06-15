@@ -12,6 +12,7 @@ const schema = z.object({
   months: z.number().int().min(1).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   pay_month: z.string().regex(/^\d{4}-\d{2}$/).nullable().optional(),
+  status: z.enum(['pendiente', 'pagado']).optional(),
 });
 
 router.use(auth);

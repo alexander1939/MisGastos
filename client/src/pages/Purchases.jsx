@@ -126,6 +126,7 @@ export default function Purchases() {
     e.preventDefault();
     const card = cardById[parseInt(form.card_id)];
     const autoMonth = form.date && card ? getPayMonth(form.date, card)?.key : null;
+    const isCash = !form.card_id;
     const payload = {
       card_id: parseInt(form.card_id) || null,
       description: form.description,
@@ -134,6 +135,7 @@ export default function Purchases() {
       months: parseInt(form.months) || 1,
       date: form.date,
       pay_month: form.pay_month || autoMonth || null,
+      ...(isCash && !editing ? { status: 'pagado' } : {}),
     };
     if (editing) {
       await update.mutateAsync({ id: editing.id, ...payload });

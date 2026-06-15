@@ -46,10 +46,11 @@ async function stats(userId) {
 }
 
 async function create(userId, data) {
+  const status = data.status || 'pendiente';
   const { rows } = await pool.query(
-    `INSERT INTO purchases (user_id, card_id, description, amount, category, months, date, pay_month)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [userId, data.card_id, data.description, data.amount, data.category, data.months || 1, data.date, data.pay_month || null]
+    `INSERT INTO purchases (user_id, card_id, description, amount, category, months, date, pay_month, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [userId, data.card_id, data.description, data.amount, data.category, data.months || 1, data.date, data.pay_month || null, status]
   );
   await invalidateCards(userId);
   return rows[0];
