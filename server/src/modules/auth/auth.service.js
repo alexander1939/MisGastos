@@ -56,7 +56,7 @@ async function register({ email, name, password, salary }) {
 }
 
 async function login({ email, password }) {
-  const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+  const { rows } = await pool.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email.trim()]);
   const user = rows[0];
   if (!user) { const e = new Error('Invalid credentials'); e.status = 401; throw e; }
   const valid = await bcrypt.compare(password, user.password);
