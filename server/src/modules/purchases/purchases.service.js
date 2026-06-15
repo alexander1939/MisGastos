@@ -174,7 +174,7 @@ function escapeCsvField(val) {
 
 async function exportCsv(userId) {
   const { rows } = await pool.query(
-    `SELECT p.date, p.description, p.amount, p.category, p.months,
+    `SELECT TO_CHAR(p.date, 'YYYY-MM-DD') AS date, p.description, p.amount, p.category, p.months,
             COALESCE(c.name, '') AS card_name, COALESCE(p.pay_month, '') AS pay_month, p.status
      FROM purchases p LEFT JOIN cards c ON c.id = p.card_id
      WHERE p.user_id = $1

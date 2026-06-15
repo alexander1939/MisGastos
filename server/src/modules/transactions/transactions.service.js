@@ -172,7 +172,7 @@ function escapeCsvField(val) {
 
 async function exportCsv(userId) {
   const { rows } = await pool.query(
-    `SELECT date, type, category, amount, method, description
+    `SELECT TO_CHAR(date, 'YYYY-MM-DD') AS date, type, category, amount, method, description
      FROM transactions WHERE user_id = $1
      ORDER BY date DESC, created_at DESC`,
     [userId]
