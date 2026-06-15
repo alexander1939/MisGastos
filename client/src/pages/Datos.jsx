@@ -1,9 +1,16 @@
 import { useRef, useState } from 'react';
 import { transactionsApi } from '../api/transactions';
 import { purchasesApi } from '../api/purchases';
-import { parseCsv, parsePurchasesCsv } from '../utils/csvParser';
+import { cardsApi } from '../api/cards';
+import { transfersApi } from '../api/transfers';
+import { parseBackup } from '../utils/csvParser';
 
-function downloadBlob(blob, filename) {
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function downloadText(text, filename) {
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -12,174 +19,182 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function ImportSection({ label, accept, onImport }) {
+export default function Datos() {
   const inputRef = useRef();
-  const [state, setState] = useState(null); // null | 'loading' | { ok, count } | { error }
+  const [exportLoading, setExportLoading] = useState(false);
+  const [importState, setImportState] = useState(null); // null | 'loading' | { results } | { error }
+
+  async function handleExport() {
+    setExportLoading(true);
+    try {
+      const [tarjetas, movimientos, compras, transferencias] = await Promise.all([
+        cardsApi.exportCsv(),
+        transactionsApi.exportCsv(),
+        purchasesApi.exportCsv(),
+        transfersApi.exportCsv(),
+      ]);
+
+      const content = [
+        '# TARJETAS', tarjetas,
+        '',
+        '# MOVIMIENTOS', movimientos,
+        '',
+        '# COMPRAS', compras,
+        '',
+        '# TRANSFERENCIAS', transferencias,
+      ].join('\n');
+
+      downloadText(content, `backup_misgastos_${today()}.csv`);
+    } catch (err) {
+      alert('Error al exportar: ' + (err.message || 'intenta de nuevo'));
+    } finally {
+      setExportLoading(false);
+    }
+  }
 
   async function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
-    setState('loading');
+    e.target.value = '';
+    setImportState('loading');
     try {
       const text = await file.text();
-      await onImport(text);
-      // count imported
-      const lines = text.trim().split('\n').filter(l => l.trim()).length - 1;
-      setState({ ok: true, count: lines });
+      const { tarjetas, movimientos, compras, transferencias } = parseBackup(text);
+
+      // Importar en orden: tarjetas primero (compras y transferencias dependen de ellas)
+      const results = {};
+      if (tarjetas.length) {
+        const r = await cardsApi.importCsv(tarjetas);
+        results.tarjetas = r.imported;
+      }
+      if (movimientos.length) {
+        const r = await transactionsApi.importCsv(movimientos);
+        results.movimientos = r.imported;
+      }
+      if (compras.length) {
+        const r = await purchasesApi.importCsv(compras);
+        results.compras = r.imported;
+      }
+      if (transferencias.length) {
+        const r = await transfersApi.importCsv(transferencias);
+        results.transferencias = r.imported;
+      }
+
+      setImportState({ results });
     } catch (err) {
-      setState({ error: err?.response?.data?.error || err.message || 'Error al importar' });
-    } finally {
-      e.target.value = '';
+      setImportState({ error: err?.response?.data?.error || err.message || 'Error al importar' });
     }
   }
 
-  return (
-    <div>
-      <input
-        ref={inputRef}
-        type="file"
-        accept={accept}
-        className="hidden"
-        onChange={handleFile}
-      />
-      <button
-        onClick={() => { setState(null); inputRef.current.click(); }}
-        disabled={state === 'loading'}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-gray-200 transition-colors disabled:opacity-50"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-        </svg>
-        {state === 'loading' ? 'Importando…' : `Importar ${label}`}
-      </button>
-      {state && state !== 'loading' && (
-        state.ok
-          ? <p className="mt-2 text-sm text-green-400">{state.count} registro{state.count !== 1 ? 's' : ''} importado{state.count !== 1 ? 's' : ''} correctamente.</p>
-          : <p className="mt-2 text-sm text-red-400">{state.error}</p>
-      )}
-    </div>
-  );
-}
-
-function ExportButton({ label, onExport, filename }) {
-  const [loading, setLoading] = useState(false);
-
-  async function handle() {
-    setLoading(true);
-    try {
-      const blob = await onExport();
-      downloadBlob(blob, filename);
-    } catch {
-      // silent — browser will show nothing if it fails
-    } finally {
-      setLoading(false);
-    }
-  }
+  const resultItems = importState?.results
+    ? [
+        { label: 'Tarjetas nuevas', key: 'tarjetas', icon: '💳' },
+        { label: 'Movimientos', key: 'movimientos', icon: '↕️' },
+        { label: 'Compras', key: 'compras', icon: '🛒' },
+        { label: 'Transferencias', key: 'transferencias', icon: '🔄' },
+      ].filter(i => importState.results[i.key] !== undefined)
+    : [];
 
   return (
-    <button
-      onClick={handle}
-      disabled={loading}
-      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 text-sm text-white transition-colors disabled:opacity-50"
-    >
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-      </svg>
-      {loading ? 'Exportando…' : `Exportar ${label}`}
-    </button>
-  );
-}
-
-function TemplateBlock({ columns, example }) {
-  return (
-    <div className="mt-3 rounded-lg bg-gray-950 border border-gray-700 overflow-x-auto">
-      <p className="px-3 pt-2 pb-1 text-xs text-gray-500 font-mono"># plantilla CSV</p>
-      <pre className="px-3 pb-3 text-xs text-gray-300 font-mono whitespace-pre">{columns}{'\n'}{example}</pre>
-    </div>
-  );
-}
-
-export default function Datos() {
-  return (
-    <div className="max-w-2xl mx-auto space-y-8">
+    <div className="max-w-xl mx-auto space-y-10">
       <div>
         <h1 className="text-2xl font-bold text-white">Exportar / Importar</h1>
         <p className="mt-1 text-sm text-gray-400">
-          Descarga todos tus registros como CSV o carga un CSV con el mismo formato para importarlos.
+          Un solo archivo CSV con todas tus tarjetas, movimientos, compras y transferencias.
         </p>
       </div>
 
-      {/* Movimientos */}
-      <div className="bg-gray-800 rounded-xl p-6 space-y-4 border border-gray-700">
+      {/* EXPORTAR */}
+      <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 space-y-4">
         <div>
-          <h2 className="text-lg font-semibold text-white">Movimientos</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Ingresos y gastos de todos los meses.</p>
+          <h2 className="text-lg font-semibold text-white">Exportar todo</h2>
+          <p className="text-xs text-gray-400 mt-1">
+            Descarga un CSV con 4 secciones: tarjetas, movimientos, compras y transferencias.
+            Puedes usar ese mismo archivo para importar.
+          </p>
         </div>
+        <button
+          onClick={handleExport}
+          disabled={exportLoading}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white font-medium text-sm transition-colors disabled:opacity-50"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          {exportLoading ? 'Exportando…' : 'Exportar todo'}
+        </button>
 
-        <div className="flex flex-wrap gap-3">
-          <ExportButton
-            label="movimientos"
-            filename="movimientos.csv"
-            onExport={() => transactionsApi.exportCsv()}
-          />
-          <ImportSection
-            label="movimientos"
-            accept=".csv"
-            onImport={async (text) => {
-              const rows = parseCsv(text);
-              await transactionsApi.importCsv(rows);
-            }}
-          />
+        <div className="rounded-lg bg-gray-950 border border-gray-700 overflow-x-auto">
+          <p className="px-3 pt-2 text-xs text-gray-500 font-mono"># formato del archivo</p>
+          <pre className="px-3 pb-3 text-xs text-gray-400 font-mono whitespace-pre">{`# TARJETAS
+nombre,tipo,color,limite,dia_corte,dia_pago
+Santander,credito,blue,30000,15,5
+BBVA,debito,green,,,
+
+# MOVIMIENTOS
+fecha,tipo,categoria,monto,metodo,descripcion
+2024-03-15,gasto,Comida,250.00,Efectivo,Tacos
+2024-03-01,ingreso,Salario,15000.00,BBVA,Quincena
+
+# COMPRAS
+fecha,descripcion,monto,categoria,meses,tarjeta,mes_pago,estado
+2024-03-10,Netflix,299.00,Entretenimiento,1,Santander,2024-03,pendiente
+
+# TRANSFERENCIAS
+fecha,descripcion,monto,tipo,desde,hacia
+2024-03-20,Pago tarjeta,5000.00,transfer,BBVA,Santander`}</pre>
         </div>
-
-        <TemplateBlock
-          columns="fecha,tipo,categoria,monto,metodo,descripcion"
-          example={`2024-03-15,gasto,Comida,250.00,Efectivo,Tacos del jueves\n2024-03-01,ingreso,Salario,15000.00,BBVA,Quincena marzo`}
-        />
-
-        <ul className="text-xs text-gray-500 space-y-0.5 list-disc list-inside">
-          <li><strong className="text-gray-400">tipo</strong>: <code>ingreso</code> o <code>gasto</code></li>
-          <li><strong className="text-gray-400">fecha</strong>: formato <code>YYYY-MM-DD</code></li>
-          <li><strong className="text-gray-400">metodo</strong> y <strong className="text-gray-400">descripcion</strong>: opcionales</li>
-        </ul>
       </div>
 
-      {/* Compras */}
-      <div className="bg-gray-800 rounded-xl p-6 space-y-4 border border-gray-700">
+      {/* IMPORTAR */}
+      <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 space-y-4">
         <div>
-          <h2 className="text-lg font-semibold text-white">Compras a crédito</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Todas las compras de todas las tarjetas y todos los meses.</p>
+          <h2 className="text-lg font-semibold text-white">Importar todo</h2>
+          <p className="text-xs text-gray-400 mt-1">
+            Sube el archivo exportado (o uno con el mismo formato). Las tarjetas que ya existen no se duplican.
+            El orden de importación es automático: tarjetas → movimientos → compras → transferencias.
+          </p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <ExportButton
-            label="compras"
-            filename="compras.csv"
-            onExport={() => purchasesApi.exportCsv()}
-          />
-          <ImportSection
-            label="compras"
-            accept=".csv"
-            onImport={async (text) => {
-              const rows = parsePurchasesCsv(text);
-              await purchasesApi.importCsv(rows);
-            }}
-          />
-        </div>
+        <input ref={inputRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
+        <button
+          onClick={() => { setImportState(null); inputRef.current.click(); }}
+          disabled={importState === 'loading'}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium text-sm transition-colors disabled:opacity-50"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          {importState === 'loading' ? 'Importando…' : 'Seleccionar archivo'}
+        </button>
 
-        <TemplateBlock
-          columns="fecha,descripcion,monto,categoria,meses,tarjeta,mes_pago,estado"
-          example={`2024-03-10,Netflix,299.00,Entretenimiento,1,Santander,2024-03,pendiente\n2024-02-20,Gym anual,3600.00,Salud,12,BBVA,2024-02,pagado`}
-        />
+        {importState === 'loading' && (
+          <p className="text-sm text-gray-400 animate-pulse">Importando datos en orden…</p>
+        )}
 
-        <ul className="text-xs text-gray-500 space-y-0.5 list-disc list-inside">
-          <li><strong className="text-gray-400">tarjeta</strong>: nombre exacto de la tarjeta (debe existir en tu cuenta)</li>
-          <li><strong className="text-gray-400">meses</strong>: número de meses a pagar (mínimo 1)</li>
-          <li><strong className="text-gray-400">mes_pago</strong>: formato <code>YYYY-MM</code>, opcional (override de ciclo)</li>
-          <li><strong className="text-gray-400">estado</strong>: <code>pendiente</code>, <code>pagado</code> o <code>archivado</code> (default: pendiente)</li>
-        </ul>
+        {importState?.results && (
+          <div className="rounded-lg bg-green-900/30 border border-green-700/50 p-4 space-y-2">
+            <p className="text-sm font-semibold text-green-400">Importación completada</p>
+            <ul className="space-y-1">
+              {resultItems.map(i => (
+                <li key={i.key} className="text-sm text-gray-300">
+                  {i.icon} <span className="text-white font-medium">{importState.results[i.key]}</span> {i.label}
+                </li>
+              ))}
+              {resultItems.length === 0 && (
+                <li className="text-sm text-gray-400">No se encontraron secciones para importar.</li>
+              )}
+            </ul>
+          </div>
+        )}
+
+        {importState?.error && (
+          <div className="rounded-lg bg-red-900/30 border border-red-700/50 p-4">
+            <p className="text-sm text-red-400">{importState.error}</p>
+          </div>
+        )}
       </div>
     </div>
   );

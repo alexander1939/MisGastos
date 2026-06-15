@@ -53,4 +53,45 @@ async function summary(userId, id) {
   };
 }
 
-module.exports = { list, create, update, remove, summary };
+function escapeCsvField(val) {
+  const s = val == null ? '' : String(val);
+  return s.includes(',') || s.includes('"') || s.includes('\n')
+    ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+async function exportCsv(userId) {
+  const { rows } = await pool.query(
+    'SELECT name, type, color, credit_limit, cut_day, pay_day FROM cards WHERE user_id = $1 ORDER BY created_at',
+    [userId]
+  );
+  const header = 'nombre,tipo,color,limite,dia_corte,dia_pago';
+  const lines = rows.map(r =>
+    [r.name, r.type, r.color || '', r.credit_limit || '', r.cut_day || '', r.pay_day || '']
+      .map(escapeCsvField).join(',')
+  );
+  return [header, ...lines].join('\n');
+}
+
+async function importCsv(userId, rows) {
+  const { rows: existing } = await pool.query(
+    'SELECT name FROM cards WHERE user_id = $1', [userId]
+  );
+  const existingNames = new Set(existing.map(c => c.name.toLowerCase()));
+  let imported = 0;
+  for (const row of rows) {
+    if (!row.name || existingNames.has(row.name.toLowerCase())) continue;
+    await pool.query(
+      `INSERT INTO cards (user_id, name, type, color, credit_limit, cut_day, pay_day)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [userId, row.name, row.type || 'debito', row.color || 'gray',
+       row.credit_limit ? parseFloat(row.credit_limit) : null,
+       row.cut_day ? parseInt(row.cut_day) : null,
+       row.pay_day ? parseInt(row.pay_day) : null]
+    );
+    existingNames.add(row.name.toLowerCase());
+    imported++;
+  }
+  return { imported };
+}
+
+module.exports = { list, create, update, remove, summary, exportCsv, importCsv };

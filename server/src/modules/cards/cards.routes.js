@@ -15,6 +15,8 @@ const schema = z.object({
 
 router.use(auth);
 router.get('/', ctrl.list);
+router.get('/export', ctrl.exportCsv);
+router.post('/import', ctrl.importCsv);
 router.post('/', validate(schema), ctrl.create);
 router.get('/:id/summary', ctrl.summary);
 router.put('/:id', ctrl.update);

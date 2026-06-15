@@ -8,6 +8,6 @@ export const purchasesApi = {
   updateStatus: (id, status) => api.put(`/purchases/${id}/status`, { status }).then(r => r.data),
   remove: (id) => api.delete(`/purchases/${id}`).then(r => r.data),
   payCard: (data) => api.post('/purchases/pay-card', data).then(r => r.data),
-  exportCsv: () => api.get('/purchases/export', { responseType: 'blob' }).then(r => r.data),
+  exportCsv: () => api.get('/purchases/export', { responseType: 'text' }).then(r => r.data),
   importCsv: (rows) => api.post('/purchases/import', { rows }).then(r => r.data),
 };
