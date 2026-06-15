@@ -96,12 +96,14 @@ export default function Purchases() {
 
   const cardById = useMemo(() => Object.fromEntries(cards.map(c => [c.id, c])), [cards]);
 
-  // Resumen por mes de pago (solo pendientes/urgentes)
+  // Resumen por mes de pago (solo tarjetas de CRÉDITO pendientes/urgentes)
   const payMonthSummary = useMemo(() => {
     const map = {};
     for (const p of data?.data || []) {
       if (p.status === 'archivado' || p.status === 'pagado') continue;
       const card = cardById[p.card_id];
+      // Solo crédito — efectivo y débito ya están pagados
+      if (!p.card_id || (card && card.type !== 'credito')) continue;
       const pm = fromStoredMonth(p.pay_month, card) || getPayMonth(p.date, card);
       const key = pm?.key || 'sin-fecha';
       const label = pm?.label || 'Sin fecha de pago';
@@ -147,6 +149,13 @@ export default function Purchases() {
   const isPending = editing ? update.isPending || updateStatus.isPending : create.isPending;
   const FILTER_STATUSES = ['', 'pendiente', 'urgente', 'pagado'];
 
+  // Compras pagadas (efectivo + débito) agrupadas para mostrar resumen
+  const paidSummary = useMemo(() => {
+    const items = (data?.data || []).filter(p => p.status === 'pagado');
+    const total = items.reduce((s, p) => s + parseFloat(p.amount), 0);
+    return { items, total };
+  }, [data]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -180,6 +189,31 @@ export default function Purchases() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Resumen de pagado (efectivo + débito) */}
+      {paidSummary.items.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-gray-500">Ya pagado</p>
+            <span className="text-sm font-bold text-green-400">{formatCurrency(paidSummary.total)}</span>
+          </div>
+          <div className="space-y-1.5">
+            {paidSummary.items.slice(0, 5).map(p => (
+              <div key={p.id} className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 text-gray-300 min-w-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                  <span className="truncate">{p.description}</span>
+                  <span className="text-xs text-gray-600 shrink-0">{p.card_name || 'Efectivo'}</span>
+                </span>
+                <span className="font-medium text-green-400 ml-3 shrink-0">{formatCurrency(p.amount)}</span>
+              </div>
+            ))}
+            {paidSummary.items.length > 5 && (
+              <p className="text-xs text-gray-600 pt-1">+{paidSummary.items.length - 5} más pagadas</p>
+            )}
+          </div>
         </div>
       )}
 

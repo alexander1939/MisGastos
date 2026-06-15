@@ -218,7 +218,12 @@ export default function Dashboard() {
           value={formatCurrency(ingresos - gastos - totalDeuda)}
           color={(ingresos - gastos - totalDeuda) >= 0 ? 'text-green-400' : 'text-red-400'}
         />
-        <StatCard label="Esta semana" value={feedByDate.length} sub="días con actividad" />
+        <StatCard
+          label="Pagado este mes"
+          value={formatCurrency(totalPagado)}
+          color="text-green-400"
+          sub={paidThisMonth.length > 0 ? `${paidThisMonth.length} compra${paidThisMonth.length !== 1 ? 's' : ''}` : undefined}
+        />
       </div>
 
       {/* Gráficas del mes */}
