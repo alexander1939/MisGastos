@@ -17,9 +17,11 @@ const schema = z.object({
 router.use(auth);
 router.get('/', ctrl.list);
 router.get('/stats', ctrl.stats);
+router.get('/export', ctrl.exportCsv);
 router.post('/', validate(schema), ctrl.create);
-router.put('/:id', ctrl.update);
+router.post('/import', ctrl.importCsv);
 router.post('/pay-card', ctrl.payCard);
+router.put('/:id', ctrl.update);
 router.put('/:id/status', ctrl.updateStatus);
 router.delete('/:id', ctrl.remove);
 

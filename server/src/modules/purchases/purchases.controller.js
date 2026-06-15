@@ -28,4 +28,20 @@ async function payCard(req, res, next) {
   try { res.json(await service.payCard(req.userId, req.body)); } catch (err) { next(err); }
 }
 
-module.exports = { list, stats, create, update, updateStatus, remove, payCard };
+async function exportCsv(req, res, next) {
+  try {
+    const csv = await service.exportCsv(req.userId);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="compras.csv"');
+    res.send(csv);
+  } catch (err) { next(err); }
+}
+
+async function importCsv(req, res, next) {
+  try {
+    const result = await service.importCsv(req.userId, req.body.rows);
+    res.json(result);
+  } catch (err) { next(err); }
+}
+
+module.exports = { list, stats, create, update, updateStatus, remove, payCard, exportCsv, importCsv };

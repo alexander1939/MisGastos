@@ -11,6 +11,7 @@ import Budgets from './pages/Budgets';
 import Calendar from './pages/Calendar';
 import Transfers from './pages/Transfers';
 import Profile from './pages/Profile';
+import Datos from './pages/Datos';
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token);
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="calendar" element={<Calendar />} />
           <Route path="transfers" element={<Transfers />} />
           <Route path="profile" element={<Profile />} />
+          <Route path="datos" element={<Datos />} />
         </Route>
       </Routes>
     </BrowserRouter>

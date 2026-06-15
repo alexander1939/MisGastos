@@ -166,4 +166,59 @@ async function payCard(userId, { cardId, month, fromCardName }) {
   }
 }
 
-module.exports = { list, stats, create, update, updateStatus, remove, payCard };
+function escapeCsvField(val) {
+  const s = val == null ? '' : String(val);
+  return s.includes(',') || s.includes('"') || s.includes('\n')
+    ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+async function exportCsv(userId) {
+  const { rows } = await pool.query(
+    `SELECT p.date, p.description, p.amount, p.category, p.months,
+            COALESCE(c.name, '') AS card_name, COALESCE(p.pay_month, '') AS pay_month, p.status
+     FROM purchases p LEFT JOIN cards c ON c.id = p.card_id
+     WHERE p.user_id = $1
+     ORDER BY p.date DESC, p.created_at DESC`,
+    [userId]
+  );
+  const header = 'fecha,descripcion,monto,categoria,meses,tarjeta,mes_pago,estado';
+  const lines = rows.map(r =>
+    [r.date, r.description, r.amount, r.category, r.months, r.card_name, r.pay_month, r.status]
+      .map(escapeCsvField).join(',')
+  );
+  return [header, ...lines].join('\n');
+}
+
+async function importCsv(userId, rows) {
+  // Cargar tarjetas del usuario una sola vez para resolver card_id por nombre
+  const { rows: cards } = await pool.query(
+    'SELECT id, name FROM cards WHERE user_id = $1', [userId]
+  );
+  const cardMap = Object.fromEntries(cards.map(c => [c.name.toLowerCase(), c.id]));
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const row of rows) {
+      const cardId = row.card_name ? (cardMap[row.card_name.toLowerCase()] || null) : null;
+      const status = ['pendiente', 'pagado', 'archivado', 'urgente'].includes(row.status)
+        ? row.status : 'pendiente';
+      await client.query(
+        `INSERT INTO purchases (user_id, card_id, description, amount, category, months, date, pay_month, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [userId, cardId, row.description, row.amount, row.category,
+         row.months || 1, row.date, row.pay_month || null, status]
+      );
+    }
+    await client.query('COMMIT');
+    await invalidateCards(userId);
+    return { imported: rows.length };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { list, stats, create, update, updateStatus, remove, payCard, exportCsv, importCsv };

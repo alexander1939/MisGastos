@@ -164,4 +164,25 @@ async function accountBalance(userId) {
   return rows;
 }
 
-module.exports = { list, summary, create, update, remove, importCsv, accountBalance };
+function escapeCsvField(val) {
+  const s = val == null ? '' : String(val);
+  return s.includes(',') || s.includes('"') || s.includes('\n')
+    ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+async function exportCsv(userId) {
+  const { rows } = await pool.query(
+    `SELECT date, type, category, amount, method, description
+     FROM transactions WHERE user_id = $1
+     ORDER BY date DESC, created_at DESC`,
+    [userId]
+  );
+  const header = 'fecha,tipo,categoria,monto,metodo,descripcion';
+  const lines = rows.map(r =>
+    [r.date, r.type, r.category, r.amount, r.method || '', r.description || '']
+      .map(escapeCsvField).join(',')
+  );
+  return [header, ...lines].join('\n');
+}
+
+module.exports = { list, summary, create, update, remove, importCsv, accountBalance, exportCsv };

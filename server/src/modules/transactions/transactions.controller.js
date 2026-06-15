@@ -49,4 +49,13 @@ async function accountBalance(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { list, summary, create, update, remove, importCsv, accountBalance };
+async function exportCsv(req, res, next) {
+  try {
+    const csv = await service.exportCsv(req.userId);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="movimientos.csv"');
+    res.send(csv);
+  } catch (err) { next(err); }
+}
+
+module.exports = { list, summary, create, update, remove, importCsv, accountBalance, exportCsv };

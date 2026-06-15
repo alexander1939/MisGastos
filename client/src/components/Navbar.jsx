@@ -9,6 +9,7 @@ const links = [
   { to: '/transfers', label: 'Transferencias' },
   { to: '/purchases', label: 'Compras' },
   { to: '/calendar', label: 'Calendario' },
+  { to: '/datos', label: 'Exportar / Importar' },
 ];
 
 export default function Navbar() {

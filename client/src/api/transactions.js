@@ -8,4 +8,5 @@ export const transactionsApi = {
   remove: (id) => api.delete(`/transactions/${id}`).then(r => r.data),
   importCsv: (rows) => api.post('/transactions/import', { rows }).then(r => r.data),
   accountBalance: () => api.get('/transactions/account-balance').then(r => r.data),
+  exportCsv: () => api.get('/transactions/export', { responseType: 'blob' }).then(r => r.data),
 };
