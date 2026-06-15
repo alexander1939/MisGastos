@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { calendarApi } from '../api/calendar';
 import { cardsApi } from '../api/cards';
 import { purchasesApi } from '../api/purchases';
+import { transactionsApi } from '../api/transactions';
+import { transfersApi } from '../api/transfers';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
@@ -13,19 +15,29 @@ import { effectivePayMonth, getPayMonth } from '../utils/billingHelpers';
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 const TYPE_BAR = {
-  quincena: 'bg-green-600 text-white',
-  tarjeta:  'bg-indigo-500 text-white',
-  pago:     'bg-amber-500 text-white',
-  tarea:    'bg-violet-500 text-white',
-  compra:   'bg-pink-600 text-white',
+  quincena:      'bg-green-600 text-white',
+  tarjeta:       'bg-indigo-500 text-white',
+  pago:          'bg-amber-500 text-white',
+  tarea:         'bg-violet-500 text-white',
+  compra:        'bg-pink-600 text-white',
+  ingreso:       'bg-emerald-600 text-white',
+  gasto:         'bg-red-600 text-white',
+  proximo:       'bg-amber-600 text-white',
+  transferencia: 'bg-blue-600 text-white',
+  retiro:        'bg-orange-600 text-white',
 };
 
 const TYPE_LABELS = {
-  quincena: 'Quincena',
-  tarjeta:  'Tarjeta',
-  pago:     'Pago fijo',
-  tarea:    'Tarea',
-  compra:   'Compra',
+  quincena:      'Quincena',
+  tarjeta:       'Tarjeta',
+  pago:          'Pago fijo',
+  tarea:         'Tarea',
+  compra:        'Compra',
+  ingreso:       'Ingreso',
+  gasto:         'Gasto',
+  proximo:       'Próximo',
+  transferencia: 'Transferencia',
+  retiro:        'Retiro',
 };
 
 const STATUS_LABEL = {
@@ -90,6 +102,7 @@ function billingInfo(purchaseDateStr, card) {
 }
 
 function eventBg(ev) {
+  if (ev.isFuture)              return TYPE_BAR.proximo;
   if (ev.urgency === 'urgente') return 'bg-red-500 text-white';
   if (ev.urgency === 'pronto')  return 'bg-orange-500 text-white';
   return TYPE_BAR[ev.type] || 'bg-gray-600 text-white';
@@ -121,12 +134,27 @@ export default function Calendar() {
   });
 
 
-  // Todas las compras pendientes/urgentes (para calcular deuda por tarjeta)
+  // Todas las compras (para calcular deuda y mostrar débito/efectivo)
   const { data: allPurchasesRes } = useQuery({
     queryKey: ['purchases-pending'],
     queryFn: () => purchasesApi.list({ limit: 500 }),
   });
   const allPurchases = allPurchasesRes?.data || [];
+
+  // Transacciones del mes mostrado (ingresos, gastos, próximos)
+  const { data: txRes } = useQuery({
+    queryKey: ['transactions', 'calendar', monthFrom, monthTo],
+    queryFn: () => transactionsApi.list({ from: monthFrom, to: monthTo, limit: 300 }),
+  });
+
+  // Todas las transferencias (filtradas por mes en el cliente)
+  const { data: allTransfers = [] } = useQuery({
+    queryKey: ['transfers'],
+    queryFn: transfersApi.list,
+  });
+  const monthTransfers = useMemo(() =>
+    allTransfers.filter(t => String(t.date).slice(0, 7) === month),
+  [allTransfers, month]);
 
   // Mapa tarjeta → deuda pendiente
   const pendingByCard = useMemo(() => {
@@ -234,10 +262,76 @@ export default function Calendar() {
       });
   }, [allPurchases, cardById, month, y, m, daysInMon]);
 
+  // --- Eventos: transacciones del mes (ingresos, gastos, próximos) ---
+  const transactionEvents = useMemo(() =>
+    (txRes?.data || []).map(t => {
+      const ds = String(t.date).slice(0, 10);
+      const isFuture = ds > todayStr;
+      return {
+        id: `vtx-${t.id}`,
+        title: t.description || t.category,
+        type: isFuture ? 'proximo' : t.type,
+        date: ds,
+        done: false,
+        virtual: true,
+        isFuture,
+        amount: parseFloat(t.amount),
+        note: [t.category, t.method].filter(Boolean).join(' · '),
+      };
+    }),
+  [txRes, todayStr]);
+
+  // --- Eventos: compras con débito o efectivo (en su fecha de compra) ---
+  const paidPurchaseEvents = useMemo(() =>
+    allPurchases
+      .filter(p => {
+        if (p.status === 'archivado') return false;
+        const card = cardById[p.card_id];
+        if (p.card_id && card?.type === 'credito') return false; // crédito ya lo maneja purchaseEvents
+        return String(p.date).slice(0, 7) === month;
+      })
+      .map(p => {
+        const card = cardById[p.card_id];
+        return {
+          id: `vpaid-${p.id}`,
+          title: p.description,
+          type: 'compra',
+          date: String(p.date).slice(0, 10),
+          done: p.status === 'pagado',
+          virtual: true,
+          amount: parseFloat(p.amount),
+          note: card ? `Débito: ${card.name}` : 'Efectivo · pagado',
+          status: p.status,
+        };
+      }),
+  [allPurchases, cardById, month]);
+
+  // --- Eventos: transferencias y retiros del mes ---
+  const transferEvents = useMemo(() =>
+    monthTransfers.map(t => {
+      const ds = String(t.date).slice(0, 10);
+      const isRetiro = t.type === 'retiro';
+      const isFuture = ds > todayStr;
+      const fromName = t.from_card_name || 'Externo';
+      const toName   = t.to_card_name   || 'Externo';
+      return {
+        id: `vtr-${t.id}`,
+        title: t.description || (isRetiro ? `Retiro: ${fromName}` : `${fromName} → ${toName}`),
+        type: isFuture ? 'proximo' : (isRetiro ? 'retiro' : 'transferencia'),
+        date: ds,
+        done: false,
+        virtual: true,
+        isFuture,
+        amount: parseFloat(t.amount),
+        note: isRetiro ? `Desde: ${fromName}` : `De: ${fromName} → Hacia: ${toName}`,
+      };
+    }),
+  [monthTransfers, todayStr]);
+
   // --- Combinados ---
   const allEvents = useMemo(
-    () => [...dbEvents, ...cardEvents, ...purchaseEvents],
-    [dbEvents, cardEvents, purchaseEvents]
+    () => [...dbEvents, ...cardEvents, ...purchaseEvents, ...transactionEvents, ...paidPurchaseEvents, ...transferEvents],
+    [dbEvents, cardEvents, purchaseEvents, transactionEvents, paidPurchaseEvents, transferEvents]
   );
 
   const byDate = useMemo(() => allEvents.reduce((acc, ev) => {
@@ -295,6 +389,7 @@ export default function Calendar() {
         <span className="px-2 py-0.5 rounded font-medium bg-red-500 text-white">Urgente</span>
         <span className="px-2 py-0.5 rounded font-medium bg-orange-500 text-white">Pronto</span>
       </div>
+      <p className="text-xs text-gray-600">Las compras con débito/efectivo aparecen en su fecha de compra. Los próximos aparecen en ámbar.</p>
 
       <div className="flex gap-4 items-start">
         {/* Grid */}
