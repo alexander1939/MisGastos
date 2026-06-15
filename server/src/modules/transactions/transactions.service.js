@@ -25,7 +25,7 @@ async function list(userId, { period, category, method, from, to, page = 1, limi
       ? `t.date >= DATE_TRUNC('month', NOW())`
       : `t.date >= DATE_TRUNC('month', NOW()) + INTERVAL '15 days'`);
   } else if (period === 'mes') {
-    where.push(`t.date >= DATE_TRUNC('month', NOW())`);
+    where.push(`t.date >= DATE_TRUNC('month', NOW()) AND t.date <= CURRENT_DATE`);
   }
 
   if (from) { where.push(`t.date >= $${i++}`); values.push(from); }
@@ -52,7 +52,7 @@ async function summary(userId, { period, from, to }) {
   const values = [userId];
   let i = 2;
 
-  if (period === 'mes') where.push(`date >= DATE_TRUNC('month', NOW())`);
+  if (period === 'mes') where.push(`date >= DATE_TRUNC('month', NOW()) AND date <= CURRENT_DATE`);
   if (from) { where.push(`date >= $${i++}`); values.push(from); }
   if (to)   { where.push(`date <= $${i++}`); values.push(to); }
 
@@ -141,6 +141,7 @@ async function accountBalance(userId) {
          0 AS enviado
        FROM transactions
        WHERE user_id = $1 AND method IS NOT NULL AND method != ''
+         AND date <= CURRENT_DATE
        GROUP BY method
 
        UNION ALL
@@ -148,14 +149,14 @@ async function accountBalance(userId) {
        SELECT c.name AS account, 0, 0, t.amount AS recibido, 0
        FROM transfers t
        JOIN cards c ON c.id = t.to_card_id
-       WHERE t.user_id = $1
+       WHERE t.user_id = $1 AND t.date <= CURRENT_DATE
 
        UNION ALL
 
        SELECT c.name AS account, 0, 0, 0, t.amount AS enviado
        FROM transfers t
        JOIN cards c ON c.id = t.from_card_id
-       WHERE t.user_id = $1
+       WHERE t.user_id = $1 AND t.date <= CURRENT_DATE
      ) sub
      GROUP BY account
      ORDER BY (SUM(ingresos) + SUM(recibido) - SUM(gastos) - SUM(enviado)) DESC`,

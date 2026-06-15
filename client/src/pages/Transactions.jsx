@@ -31,7 +31,14 @@ export default function Transactions() {
   const [form, setForm]       = useState(empty);
   const queryClient           = useQueryClient();
 
-  const { data, isLoading } = useTransactions({ period });
+  const tomorrow = useMemo(() => {
+    const d = new Date(); d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }, []);
+  const txParams = period === 'proximos'
+    ? { from: tomorrow, limit: 100 }
+    : { period };
+  const { data, isLoading } = useTransactions(txParams);
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const remove = useDeleteTransaction();
@@ -67,16 +74,28 @@ export default function Transactions() {
     return allTransfers.filter(t => t.date >= fromStr);
   }, [allTransfers, period]);
 
+  // Próximos: transacciones y transferencias con fecha futura
+  const proximos = useMemo(() => {
+    const txs = (data?.data || []).map(t => ({ ...t, _kind: 'tx' }));
+    const trs  = allTransfers.map(t => ({ ...t, _kind: 'tr' }));
+    return [...txs, ...trs]
+      .filter(i => i.date > today())
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [data, allTransfers]);
+
   // Lista unificada ordenada por fecha desc
+  const todayStr = today();
   const allItems = useMemo(() => {
     const txs = (data?.data || []).map(t => ({ ...t, _kind: 'tx' }));
     const trs = transfers.map(t => ({ ...t, _kind: 'tr' }));
-    return [...txs, ...trs].sort((a, b) =>
+    const merged = [...txs, ...trs].sort((a, b) =>
       b.date !== a.date
         ? b.date.localeCompare(a.date)
         : (b.created_at || '').localeCompare(a.created_at || '')
     );
-  }, [data, transfers]);
+    if (period === 'proximos') return merged.filter(i => i.date > todayStr);
+    return merged;
+  }, [data, transfers, period, todayStr]);
 
   const { data: balanceRaw = [] } = useQuery({
     queryKey: ['account-balance'],
@@ -191,8 +210,54 @@ export default function Transactions() {
         </div>
       )}
 
+      {/* Próximos — solo si existen */}
+      {proximos.length > 0 && (
+        <div className="border border-amber-800/50 bg-amber-950/30 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500" />
+              <span className="text-sm font-medium text-amber-400">Próximos</span>
+              <span className="text-xs text-amber-600">— aún no están en tu saldo</span>
+            </div>
+            <div className="text-right">
+              {(() => {
+                const ing = proximos.filter(i => i._kind === 'tx' && i.type === 'ingreso').reduce((s, i) => s + parseFloat(i.amount), 0);
+                const gas = proximos.filter(i => i._kind === 'tx' && i.type === 'gasto').reduce((s, i) => s + parseFloat(i.amount), 0);
+                return (
+                  <div className="flex gap-3 text-xs">
+                    {ing > 0 && <span className="text-green-400">+{formatCurrency(ing)}</span>}
+                    {gas > 0 && <span className="text-red-400">−{formatCurrency(gas)}</span>}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+          <div className="space-y-2">
+            {proximos.map(item => (
+              <div key={`${item._kind}-${item.id}`} className="flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs text-amber-600 shrink-0 w-16">{fmtDate(item.date)}</span>
+                  <span className="text-sm text-gray-300 truncate">
+                    {item._kind === 'tx' ? (item.description || item.category) : (item.description || 'Transferencia')}
+                  </span>
+                  {item._kind === 'tx' && (
+                    <span className="text-xs text-gray-600 shrink-0">{item.method || item.category}</span>
+                  )}
+                </div>
+                <span className={`text-sm font-medium shrink-0 ml-3 ${
+                  item._kind === 'tr' ? 'text-primary-300' :
+                  item.type === 'ingreso' ? 'text-green-400' : 'text-red-400'
+                }`}>
+                  {item._kind === 'tx' && (item.type === 'ingreso' ? '+' : '−')}{formatCurrency(item.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filtro de periodo */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {periods.map(p => (
           <button
             key={p}
@@ -204,6 +269,14 @@ export default function Transactions() {
             {p}
           </button>
         ))}
+        <button
+          onClick={() => setPeriod('proximos')}
+          className={`px-3 py-1 rounded-full text-sm transition-colors ${
+            period === 'proximos' ? 'bg-amber-600 text-white' : 'bg-gray-800 text-amber-500 hover:text-amber-300'
+          }`}
+        >
+          próximos
+        </button>
       </div>
 
       {/* Lista unificada */}
@@ -226,11 +299,17 @@ export default function Transactions() {
             </thead>
             <tbody>
               {allItems.map(item => {
+                const isFuture = item.date > todayStr;
                 if (item._kind === 'tr') {
                   const isRetiro = item.type === 'retiro';
                   return (
-                    <tr key={`tr-${item.id}`} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                      <td className="px-4 py-3 text-gray-400">{fmtDate(item.date)}</td>
+                    <tr key={`tr-${item.id}`} className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${isFuture ? 'opacity-70' : ''}`}>
+                      <td className="px-4 py-3 text-gray-400">
+                        <div className="flex items-center gap-1.5">
+                          {fmtDate(item.date)}
+                          {isFuture && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-400 font-medium">próximo</span>}
+                        </div>
+                      </td>
                       <td className="px-4 py-3">{item.description || '—'}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">
                         <span className="flex items-center gap-1">
@@ -267,8 +346,13 @@ export default function Transactions() {
 
                 // Transacción normal
                 return (
-                  <tr key={`tx-${item.id}`} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                    <td className="px-4 py-3 text-gray-400">{fmtDate(item.date)}</td>
+                  <tr key={`tx-${item.id}`} className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${isFuture ? 'opacity-70' : ''}`}>
+                    <td className="px-4 py-3 text-gray-400">
+                      <div className="flex items-center gap-1.5">
+                        {fmtDate(item.date)}
+                        {isFuture && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-400 font-medium">próximo</span>}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">{item.description || item.category}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs">
                       <span>{item.category}</span>
