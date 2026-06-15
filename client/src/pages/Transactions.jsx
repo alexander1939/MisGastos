@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from '../hooks/useTransactions';
 import { usePeriod } from '../hooks/usePeriod';
 import { cardsApi } from '../api/cards';
 import { transactionsApi } from '../api/transactions';
+import { transfersApi } from '../api/transfers';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
@@ -15,23 +16,67 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 const EXPENSE_CATEGORIES = ['Comida', 'Transporte', 'Renta', 'Salud', 'Entretenimiento', 'Ropa', 'Servicios', 'Otro'];
 const INCOME_CATEGORIES  = ['Salario', 'Transferencia', 'Regalo', 'Freelance', 'Venta', 'Otro'];
 
-const empty = { amount: '', type: 'gasto', category: 'Comida', method: '', description: '', date: today() };
+const IS_TRANSFER_TYPE = t => t === 'transferencia' || t === 'retiro';
+
+const empty = {
+  amount: '', type: 'gasto', category: 'Comida',
+  method: '', description: '', date: today(),
+  from_card_id: '', to_card_id: '',
+};
 
 export default function Transactions() {
   const { period, setPeriod, periods } = usePeriod();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]       = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState(empty);
+  const [form, setForm]       = useState(empty);
+  const queryClient           = useQueryClient();
+
   const { data, isLoading } = useTransactions({ period });
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const remove = useDeleteTransaction();
 
-  const { data: cards = [] } = useQuery({
-    queryKey: ['cards'],
-    queryFn: cardsApi.list,
-  });
+  const { data: cards = [] } = useQuery({ queryKey: ['cards'], queryFn: cardsApi.list });
   const debitCards = cards.filter(c => c.type === 'debito');
+
+  const { data: allTransfers = [] } = useQuery({ queryKey: ['transfers'], queryFn: transfersApi.list });
+
+  const removeTransfer = useMutation({
+    mutationFn: transfersApi.remove,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transfers'] });
+      queryClient.invalidateQueries({ queryKey: ['account-balance'] });
+    },
+  });
+
+  // Filtrar transferencias por el mismo periodo que las transacciones
+  const transfers = useMemo(() => {
+    const now = new Date();
+    let fromStr = null;
+    if (period === 'semana') {
+      const d = new Date(now); d.setDate(d.getDate() - 7);
+      fromStr = d.toISOString().slice(0, 10);
+    } else if (period === 'mes') {
+      fromStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    } else if (period === 'quincena') {
+      const day = now.getDate();
+      const start = day <= 15 ? 1 : 16;
+      fromStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(start).padStart(2, '0')}`;
+    }
+    if (!fromStr) return allTransfers;
+    return allTransfers.filter(t => t.date >= fromStr);
+  }, [allTransfers, period]);
+
+  // Lista unificada ordenada por fecha desc
+  const allItems = useMemo(() => {
+    const txs = (data?.data || []).map(t => ({ ...t, _kind: 'tx' }));
+    const trs = transfers.map(t => ({ ...t, _kind: 'tr' }));
+    return [...txs, ...trs].sort((a, b) =>
+      b.date !== a.date
+        ? b.date.localeCompare(a.date)
+        : (b.created_at || '').localeCompare(a.created_at || '')
+    );
+  }, [data, transfers]);
 
   const { data: balanceRaw = [] } = useQuery({
     queryKey: ['account-balance'],
@@ -51,37 +96,7 @@ export default function Transactions() {
       }));
   }, [balanceRaw, debitCards]);
 
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
-
-  function openEdit(t) {
-    setEditing(t);
-    setForm({
-      amount: t.amount,
-      type: t.type,
-      category: t.category,
-      method: t.method || '',
-      description: t.description || '',
-      date: t.date.slice(0, 10),
-    });
-    setOpen(true);
-  }
-
-  function closeModal() {
-    setOpen(false);
-    setEditing(null);
-    setForm(empty);
-  }
-
-  async function submit(e) {
-    e.preventDefault();
-    const payload = { ...form, amount: parseFloat(form.amount) };
-    if (editing) {
-      await update.mutateAsync({ id: editing.id, ...payload });
-    } else {
-      await create.mutateAsync(payload);
-    }
-    closeModal();
-  }
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
   function handleTypeChange(e) {
     const t = e.target.value;
@@ -90,8 +105,50 @@ export default function Transactions() {
       type: t,
       category: t === 'gasto' ? EXPENSE_CATEGORIES[0] : INCOME_CATEGORIES[0],
       method: t === 'ingreso' ? 'Efectivo físico' : '',
+      from_card_id: '',
+      to_card_id: '',
     }));
   }
+
+  function openEdit(t) {
+    setEditing(t);
+    setForm({
+      amount: t.amount, type: t.type, category: t.category,
+      method: t.method || '', description: t.description || '',
+      date: t.date.slice(0, 10), from_card_id: '', to_card_id: '',
+    });
+    setOpen(true);
+  }
+
+  function closeModal() { setOpen(false); setEditing(null); setForm(empty); }
+
+  async function submit(e) {
+    e.preventDefault();
+    if (IS_TRANSFER_TYPE(form.type)) {
+      await transfersApi.create({
+        type: form.type === 'retiro' ? 'retiro' : 'transfer',
+        from_card_id: form.from_card_id ? Number(form.from_card_id) : null,
+        to_card_id:   form.type === 'retiro' ? null : (form.to_card_id ? Number(form.to_card_id) : null),
+        amount: parseFloat(form.amount),
+        description: form.description,
+        date: form.date,
+      });
+      queryClient.invalidateQueries({ queryKey: ['transfers'] });
+      queryClient.invalidateQueries({ queryKey: ['account-balance'] });
+    } else {
+      const payload = { ...form, amount: parseFloat(form.amount) };
+      if (editing) await update.mutateAsync({ id: editing.id, ...payload });
+      else         await create.mutateAsync(payload);
+    }
+    closeModal();
+  }
+
+  const TYPES = [
+    { value: 'ingreso',       label: 'Ingreso' },
+    { value: 'gasto',         label: 'Gasto' },
+    { value: 'transferencia', label: 'Transferencia' },
+    { value: 'retiro',        label: 'Retiro' },
+  ];
 
   return (
     <div className="space-y-4">
@@ -100,6 +157,7 @@ export default function Transactions() {
         <Button onClick={() => setOpen(true)}>+ Agregar</Button>
       </div>
 
+      {/* Saldo por cuenta */}
       {balanceData.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <h2 className="text-sm font-medium text-gray-400 mb-4">Saldo por cuenta</h2>
@@ -121,20 +179,19 @@ export default function Transactions() {
               <XAxis dataKey="account" tick={{ fontSize: 11, fill: '#9ca3af' }} />
               <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
               <Tooltip
-                formatter={(v, name) => [formatCurrency(v), name === 'saldo' ? 'Saldo' : name]}
+                formatter={(v) => [formatCurrency(v), 'Saldo']}
                 contentStyle={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: 8 }}
                 labelStyle={{ color: '#e5e7eb' }}
               />
               <Bar dataKey="saldo" radius={[4, 4, 0, 0]}>
-                {balanceData.map((d, i) => (
-                  <Cell key={i} fill={d.saldo >= 0 ? d.color : '#ef4444'} />
-                ))}
+                {balanceData.map((d, i) => <Cell key={i} fill={d.saldo >= 0 ? d.color : '#ef4444'} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
       )}
 
+      {/* Filtro de periodo */}
       <div className="flex gap-2">
         {periods.map(p => (
           <button
@@ -149,10 +206,11 @@ export default function Transactions() {
         ))}
       </div>
 
+      {/* Lista unificada */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-gray-500">Cargando...</div>
-        ) : data?.data?.length === 0 ? (
+        ) : allItems.length === 0 ? (
           <div className="p-8 text-center text-gray-500">Sin movimientos</div>
         ) : (
           <table className="w-full text-sm">
@@ -160,61 +218,141 @@ export default function Transactions() {
               <tr className="border-b border-gray-800">
                 <th className="text-left px-4 py-3 text-gray-500 font-medium">Fecha</th>
                 <th className="text-left px-4 py-3 text-gray-500 font-medium">Descripción</th>
-                <th className="text-left px-4 py-3 text-gray-500 font-medium">Categoría</th>
-                <th className="text-left px-4 py-3 text-gray-500 font-medium">Cuenta</th>
+                <th className="text-left px-4 py-3 text-gray-500 font-medium">Detalle</th>
                 <th className="text-left px-4 py-3 text-gray-500 font-medium">Tipo</th>
                 <th className="text-right px-4 py-3 text-gray-500 font-medium">Monto</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {data?.data?.map(t => (
-                <tr key={t.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                  <td className="px-4 py-3 text-gray-400">{fmtDate(t.date)}</td>
-                  <td className="px-4 py-3">{t.description || '—'}</td>
-                  <td className="px-4 py-3 text-gray-400">{t.category}</td>
-                  <td className="px-4 py-3 text-gray-400">{t.method || '—'}</td>
-                  <td className="px-4 py-3"><Badge label={t.type} /></td>
-                  <td className={`px-4 py-3 text-right font-medium ${t.type === 'ingreso' ? 'text-green-400' : 'text-red-400'}`}>
-                    {t.type === 'gasto' ? '-' : '+'}{formatCurrency(t.amount)}
-                  </td>
-                  <td className="px-4 py-3 flex gap-2 justify-end">
-                    <button onClick={() => openEdit(t)} className="text-gray-600 hover:text-blue-400 text-xs">✎</button>
-                    <button onClick={() => remove.mutate(t.id)} className="text-gray-600 hover:text-red-400 text-xs">×</button>
-                  </td>
-                </tr>
-              ))}
+              {allItems.map(item => {
+                if (item._kind === 'tr') {
+                  const isRetiro = item.type === 'retiro';
+                  return (
+                    <tr key={`tr-${item.id}`} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                      <td className="px-4 py-3 text-gray-400">{fmtDate(item.date)}</td>
+                      <td className="px-4 py-3">{item.description || '—'}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs">
+                        <span className="flex items-center gap-1">
+                          {item.from_card_color && (
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: item.from_card_color }} />
+                          )}
+                          <span>{item.from_card_name || 'Externo'}</span>
+                          {!isRetiro && (
+                            <>
+                              <span className="text-gray-600 mx-0.5">→</span>
+                              {item.to_card_color && (
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: item.to_card_color }} />
+                              )}
+                              <span>{item.to_card_name || 'Externo'}</span>
+                            </>
+                          )}
+                          {isRetiro && <span className="text-amber-500 ml-0.5">↓ Retiro</span>}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-indigo-900/60 text-indigo-300">
+                          {isRetiro ? 'retiro' : 'transferencia'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-primary-300">
+                        {formatCurrency(item.amount)}
+                      </td>
+                      <td className="px-4 py-3 flex gap-2 justify-end">
+                        <button onClick={() => removeTransfer.mutate(item.id)} className="text-gray-600 hover:text-red-400 text-base leading-none">×</button>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                // Transacción normal
+                return (
+                  <tr key={`tx-${item.id}`} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                    <td className="px-4 py-3 text-gray-400">{fmtDate(item.date)}</td>
+                    <td className="px-4 py-3">{item.description || item.category}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">
+                      <span>{item.category}</span>
+                      {item.method && <span className="text-gray-600"> · {item.method}</span>}
+                    </td>
+                    <td className="px-4 py-3"><Badge label={item.type} /></td>
+                    <td className={`px-4 py-3 text-right font-medium ${item.type === 'ingreso' ? 'text-green-400' : 'text-red-400'}`}>
+                      {item.type === 'gasto' ? '-' : '+'}{formatCurrency(item.amount)}
+                    </td>
+                    <td className="px-4 py-3 flex gap-2 justify-end">
+                      <button onClick={() => openEdit(item)} className="text-gray-600 hover:text-blue-400 text-xs">✎</button>
+                      <button onClick={() => remove.mutate(item.id)} className="text-gray-600 hover:text-red-400 text-base leading-none">×</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
 
+      {/* Modal unificado */}
       <Modal open={open} onClose={closeModal} title={editing ? 'Editar movimiento' : 'Nuevo movimiento'}>
         <form onSubmit={submit} className="space-y-4">
+
+          {/* Selector de tipo */}
+          <div className="grid grid-cols-2 gap-2">
+            {TYPES.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                disabled={!!editing && IS_TRANSFER_TYPE(opt.value)}
+                onClick={() => handleTypeChange({ target: { value: opt.value } })}
+                className={`py-2 rounded-lg text-sm font-medium transition-colors border ${
+                  form.type === opt.value
+                    ? 'bg-primary-600 border-primary-600 text-white'
+                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-100 disabled:opacity-40'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <Input label="Monto" type="number" step="0.01" value={form.amount} onChange={set('amount')} required />
+            <Input label="Monto" type="number" step="0.01" min="0.01" value={form.amount} onChange={set('amount')} required />
             <Input label="Fecha" type="date" value={form.date} onChange={set('date')} required />
           </div>
-          <Select label="Tipo" value={form.type} onChange={handleTypeChange}>
-            <option value="gasto">Gasto</option>
-            <option value="ingreso">Ingreso</option>
-          </Select>
-          <Select label="Categoría" value={form.category} onChange={set('category')}>
-            {(form.type === 'gasto' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map(c => <option key={c}>{c}</option>)}
-          </Select>
 
-          {form.type === 'ingreso' ? (
-            <Select label="Entró a" value={form.method} onChange={set('method')}>
-              <option value="Efectivo físico">Efectivo físico</option>
-              {debitCards.map(c => (
-                <option key={c.id} value={c.name}>{c.name}</option>
-              ))}
-            </Select>
+          {/* Campos según tipo */}
+          {IS_TRANSFER_TYPE(form.type) ? (
+            <>
+              <Select label="De (origen)" value={form.from_card_id} onChange={set('from_card_id')}>
+                <option value="">— Externo / Banco —</option>
+                {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+              {form.type === 'transferencia' && (
+                <Select label="Hacia (destino)" value={form.to_card_id} onChange={set('to_card_id')}>
+                  <option value="">— Externo / Banco —</option>
+                  {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              )}
+              {form.type === 'retiro' && (
+                <p className="text-xs text-amber-400/80">El monto se descontará del saldo de la tarjeta seleccionada.</p>
+              )}
+            </>
           ) : (
-            <Input label="Método de pago" value={form.method} onChange={set('method')} placeholder="Efectivo, débito..." />
+            <>
+              <Select label="Categoría" value={form.category} onChange={set('category')}>
+                {(form.type === 'gasto' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES).map(c => <option key={c}>{c}</option>)}
+              </Select>
+              {form.type === 'ingreso' ? (
+                <Select label="Entró a" value={form.method} onChange={set('method')}>
+                  <option value="Efectivo físico">Efectivo físico</option>
+                  {debitCards.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </Select>
+              ) : (
+                <Input label="Método de pago" value={form.method} onChange={set('method')} placeholder="Efectivo, débito..." />
+              )}
+            </>
           )}
 
           <Input label="Descripción" value={form.description} onChange={set('description')} />
+
           <div className="flex gap-3 justify-end">
             <Button type="button" variant="secondary" onClick={closeModal}>Cancelar</Button>
             <Button type="submit" disabled={create.isPending || update.isPending}>Guardar</Button>
