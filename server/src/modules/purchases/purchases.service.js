@@ -46,12 +46,35 @@ async function stats(userId) {
 }
 
 async function create(userId, data) {
-  const status = data.status || 'pendiente';
+  // Si hay tarjeta, verificar si es débito/transporte
+  let cardType = null;
+  if (data.card_id) {
+    const { rows: [card] } = await pool.query(
+      'SELECT type FROM cards WHERE id = $1 AND user_id = $2',
+      [data.card_id, userId]
+    );
+    cardType = card?.type;
+  }
+
+  const isDebit = cardType === 'debito' || cardType === 'transporte';
+  // Efectivo (sin tarjeta) o débito → pagado inmediatamente
+  const status = data.status ?? (isDebit || !data.card_id ? 'pagado' : 'pendiente');
+
   const { rows } = await pool.query(
     `INSERT INTO purchases (user_id, card_id, description, amount, category, months, date, pay_month, status)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
     [userId, data.card_id, data.description, data.amount, data.category, data.months || 1, data.date, data.pay_month || null, status]
   );
+
+  // Débito: crear retiro para descontar del saldo de la tarjeta
+  if (isDebit && data.card_id) {
+    await pool.query(
+      `INSERT INTO transfers (user_id, from_card_id, to_card_id, amount, description, date, type)
+       VALUES ($1, $2, NULL, $3, $4, $5, 'retiro')`,
+      [userId, data.card_id, data.amount, `Compra: ${rows[0].description}`, data.date]
+    );
+  }
+
   await invalidateCards(userId);
   return rows[0];
 }

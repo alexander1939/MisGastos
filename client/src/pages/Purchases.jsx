@@ -126,7 +126,6 @@ export default function Purchases() {
     e.preventDefault();
     const card = cardById[parseInt(form.card_id)];
     const autoMonth = form.date && card ? getPayMonth(form.date, card)?.key : null;
-    const isCash = !form.card_id;
     const payload = {
       card_id: parseInt(form.card_id) || null,
       description: form.description,
@@ -135,7 +134,6 @@ export default function Purchases() {
       months: parseInt(form.months) || 1,
       date: form.date,
       pay_month: form.pay_month || autoMonth || null,
-      ...(isCash && !editing ? { status: 'pagado' } : {}),
     };
     if (editing) {
       await update.mutateAsync({ id: editing.id, ...payload });
@@ -264,9 +262,16 @@ export default function Purchases() {
             <Input label="Meses" type="number" min="1" value={form.months} onChange={set('months')} />
           </div>
           <Select label="Tarjeta" value={form.card_id} onChange={set('card_id')}>
-            <option value="">Sin tarjeta</option>
-            {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            <option value="">Sin tarjeta (efectivo)</option>
+            {cards.map(c => <option key={c.id} value={c.id}>{c.name}{c.type !== 'credito' ? ' — débito' : ''}</option>)}
           </Select>
+          {(() => {
+            const selected = cardById[parseInt(form.card_id)];
+            if (!form.card_id) return <p className="text-xs text-green-400 -mt-2">Efectivo — se marcará como pagado</p>;
+            if (selected?.type === 'debito' || selected?.type === 'transporte')
+              return <p className="text-xs text-green-400 -mt-2">Tarjeta débito — se marcará como pagado y se descontará del saldo</p>;
+            return null;
+          })()}
           <Select label="Categoría" value={form.category} onChange={set('category')}>
             {CATEGORIES.map(c => <option key={c}>{c}</option>)}
           </Select>

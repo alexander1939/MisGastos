@@ -153,6 +153,17 @@ export default function Dashboard() {
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
   }, [upcoming, upcomingCards, recentTx, recentPurchases]);
 
+  // Compras pagadas este mes (débito + efectivo)
+  const paidThisMonth = useMemo(() =>
+    (pendingRes?.data || []).filter(p =>
+      p.status === 'pagado' && p.date >= msStart && p.date <= msEnd
+    ).sort((a, b) => b.date.localeCompare(a.date)),
+  [pendingRes, msStart, msEnd]);
+
+  const totalPagado = useMemo(() =>
+    paidThisMonth.reduce((s, p) => s + parseFloat(p.amount), 0),
+  [paidThisMonth]);
+
   // Deuda por tarjeta del mes actual
   const cardTotals = useMemo(() =>
     cards
@@ -273,6 +284,35 @@ export default function Dashboard() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Pagado este mes */}
+      {paidThisMonth.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-medium text-gray-400">Pagado este mes</h2>
+            <span className="text-sm font-bold text-green-400">{formatCurrency(totalPagado)}</span>
+          </div>
+          <div className="space-y-2">
+            {paidThisMonth.slice(0, 6).map(p => (
+              <div key={p.id} className="flex items-center justify-between py-1.5 border-b border-gray-800/40 last:border-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-200 truncate">{p.description}</p>
+                    <p className="text-xs text-gray-500">{p.card_name || 'Efectivo'} · {p.date?.slice(0, 10)}</p>
+                  </div>
+                </div>
+                <span className="text-sm font-medium text-green-400 shrink-0 ml-3">
+                  {formatCurrency(p.amount)}
+                </span>
+              </div>
+            ))}
+            {paidThisMonth.length > 6 && (
+              <p className="text-xs text-gray-600 pt-1">+{paidThisMonth.length - 6} más este mes</p>
+            )}
           </div>
         </div>
       )}
