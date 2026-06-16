@@ -53,6 +53,10 @@ export default function Dashboard() {
     queryKey: ['cards'],
     queryFn: cardsApi.list,
   });
+  const { data: accountBalance = [] } = useQuery({
+    queryKey: ['account-balance'],
+    queryFn: transactionsApi.accountBalance,
+  });
   // Compras pendientes para saber qué tarjetas tienen deuda
   const { data: pendingRes } = useQuery({
     queryKey: ['purchases-pending'],
@@ -190,39 +194,62 @@ export default function Dashboard() {
 
   const ingresos = parseFloat(summary?.ingresos) || 0;
   const gastos   = parseFloat(summary?.gastos)   || 0;
-  const balance  = ingresos - gastos;
+
+  // Solo cuentas débito + efectivo (excluye crédito)
+  const debitNames = useMemo(() => {
+    const s = new Set(cards.filter(c => c.type !== 'credito').map(c => c.name));
+    s.add('Efectivo físico');
+    return s;
+  }, [cards]);
+
+  // Saldo real de todas las cuentas débito/efectivo (acumulado histórico)
+  const totalEnCuentas = useMemo(() =>
+    accountBalance
+      .filter(r => debitNames.has(r.account))
+      .reduce((sum, r) =>
+        sum + parseFloat(r.ingresos) + parseFloat(r.recibido || 0)
+            - parseFloat(r.gastos)   - parseFloat(r.enviado  || 0),
+      0),
+  [accountBalance, debitNames]);
+
+  // Toda la deuda pendiente (todos los meses, no solo el actual)
+  const totalDeudaAll = useMemo(() =>
+    (pendingRes?.data || [])
+      .filter(p => p.status === 'pendiente' || p.status === 'urgente')
+      .reduce((s, p) => s + parseFloat(p.amount), 0),
+  [pendingRes]);
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Dashboard</h1>
 
-      {/* Stats del mes */}
+      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Ingresos del mes" value={formatCurrency(ingresos)} color="text-green-400" />
         <StatCard
-          label="Total que debes"
-          value={formatCurrency(gastos + totalDeuda)}
+          label="En cuentas"
+          value={formatCurrency(totalEnCuentas)}
+          color="text-blue-400"
+          sub="saldo real acumulado"
+        />
+        <StatCard
+          label="Deuda pendiente"
+          value={formatCurrency(totalDeudaAll)}
           color="text-red-400"
-          sub={
-            gastos > 0 && totalDeuda > 0
-              ? `${formatCurrency(gastos)} efectivo + ${formatCurrency(totalDeuda)} tarjeta`
-              : gastos > 0
-              ? `${formatCurrency(gastos)} en efectivo`
-              : totalDeuda > 0
-              ? `${formatCurrency(totalDeuda)} en tarjeta`
-              : undefined
-          }
+          sub={totalDeuda > 0 && totalDeuda !== totalDeudaAll
+            ? `${formatCurrency(totalDeuda)} vence este mes`
+            : cardTotals.length > 0 ? cardTotals.map(c => c.name).join(', ') : undefined}
         />
         <StatCard
-          label="Balance"
-          value={formatCurrency(ingresos - gastos - totalDeuda)}
-          color={(ingresos - gastos - totalDeuda) >= 0 ? 'text-green-400' : 'text-red-400'}
+          label="Disponible"
+          value={formatCurrency(totalEnCuentas - totalDeudaAll)}
+          color={(totalEnCuentas - totalDeudaAll) >= 0 ? 'text-green-400' : 'text-red-400'}
+          sub="en cuentas − toda la deuda"
         />
         <StatCard
-          label="Pagado este mes"
-          value={formatCurrency(totalPagado)}
+          label="Ingresos del mes"
+          value={formatCurrency(ingresos)}
           color="text-green-400"
-          sub={paidThisMonth.length > 0 ? `${paidThisMonth.length} compra${paidThisMonth.length !== 1 ? 's' : ''}` : undefined}
+          sub={gastos > 0 ? `−${formatCurrency(gastos)} en efectivo` : undefined}
         />
       </div>
 
