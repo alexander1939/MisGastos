@@ -10,7 +10,7 @@ const schema = z.object({
   amount: z.number().positive(),
   description: z.string().max(200).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  type: z.enum(['transferencia', 'retiro']).optional(),
+  type: z.enum(['transfer', 'retiro']).optional(),
 });
 
 const importSchema = z.object({

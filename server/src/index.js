@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const http = require('http');
 const fs = require('fs');
@@ -38,13 +37,23 @@ async function start() {
   const app = express();
   const server = http.createServer(app);
 
-  app.use(helmet());
-  app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true }));
+  const allowedOrigins = (env.CLIENT_ORIGIN || 'http://localhost:5173')
+    .split(',').map(o => o.trim());
+  app.use(cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.some(o => origin === o)) return cb(null, true);
+      // en desarrollo, acepta cualquier petición del mismo host en cualquier puerto
+      if (env.NODE_ENV !== 'production') return cb(null, true);
+      cb(null, false);
+    },
+    credentials: true,
+  }));
   app.use(express.json());
   app.use(cookieParser());
 
   const rateLimiter = require('./middleware/rateLimiter');
-  app.use('/api/', rateLimiter({ max: 100, windowSec: 15 * 60 }));
+  app.use('/api/', rateLimiter({ max: 200, windowSec: 15 * 60 }));
 
   app.get('/api/health', (_, res) => res.json({ ok: true, ts: new Date() }));
   app.use('/api/auth', authRoutes);
