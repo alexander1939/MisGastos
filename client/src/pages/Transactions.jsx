@@ -95,7 +95,7 @@ export default function Transactions() {
   // Compras de débito filtradas por periodo
   const debitPurchases = useMemo(() => {
     const all = (purchasesRes?.data || [])
-      .filter(p => p.status !== 'archivado' && p.card_id && debitCardIds.has(p.card_id));
+      .filter(p => p.status !== 'archivado' && (!p.card_id || debitCardIds.has(p.card_id)));
     const now = new Date();
     let fromStr = null;
     if (period === 'semana') {

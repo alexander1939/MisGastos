@@ -173,6 +173,14 @@ async function accountBalance(userId) {
        WHERE p.user_id = $1 AND p.date <= CURRENT_DATE
          AND p.status != 'archivado'
          AND c.type IN ('debito', 'transporte')
+
+       UNION ALL
+
+       SELECT 'Efectivo físico' AS account, 0, 0, 0, p.amount AS enviado
+       FROM purchases p
+       WHERE p.user_id = $1 AND p.date <= CURRENT_DATE
+         AND p.status != 'archivado'
+         AND p.card_id IS NULL
      ) sub
      GROUP BY account
      ORDER BY (SUM(ingresos) + SUM(recibido) - SUM(gastos) - SUM(enviado)) DESC`,
