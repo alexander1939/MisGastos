@@ -79,7 +79,7 @@ export default function Transactions() {
     const txs = (data?.data || []).map(t => ({ ...t, _kind: 'tx' }));
     const trs  = allTransfers.map(t => ({ ...t, _kind: 'tr' }));
     return [...txs, ...trs]
-      .filter(i => i.date > today())
+      .filter(i => i.date.slice(0, 10) > today())
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [data, allTransfers]);
 
@@ -93,7 +93,7 @@ export default function Transactions() {
         ? b.date.localeCompare(a.date)
         : (b.created_at || '').localeCompare(a.created_at || '')
     );
-    if (period === 'proximos') return merged.filter(i => i.date > todayStr);
+    if (period === 'proximos') return merged.filter(i => i.date.slice(0, 10) > todayStr);
     return merged;
   }, [data, transfers, period, todayStr]);
 
@@ -299,7 +299,7 @@ export default function Transactions() {
             </thead>
             <tbody>
               {allItems.map(item => {
-                const isFuture = item.date > todayStr;
+                const isFuture = item.date.slice(0, 10) > todayStr;
                 if (item._kind === 'tr') {
                   const isRetiro = item.type === 'retiro';
                   return (
