@@ -59,7 +59,7 @@ export default function Transactions() {
     },
   });
 
-  // Filtrar transferencias por el mismo periodo que las transacciones
+  // Filtrar transferencias por periodo — excluir tipo 'compra' (ya aparecen via debitPurchases)
   const transfers = useMemo(() => {
     const now = new Date();
     let fromStr = null;
@@ -73,14 +73,15 @@ export default function Transactions() {
       const start = day <= 15 ? 1 : 16;
       fromStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(start).padStart(2, '0')}`;
     }
-    if (!fromStr) return allTransfers;
-    return allTransfers.filter(t => t.date >= fromStr);
+    const visible = allTransfers.filter(t => t.type !== 'compra');
+    if (!fromStr) return visible;
+    return visible.filter(t => t.date >= fromStr);
   }, [allTransfers, period]);
 
   // Próximos: transacciones y transferencias con fecha futura
   const proximos = useMemo(() => {
     const txs = (data?.data || []).map(t => ({ ...t, _kind: 'tx' }));
-    const trs  = allTransfers.map(t => ({ ...t, _kind: 'tr' }));
+    const trs  = allTransfers.filter(t => t.type !== 'compra').map(t => ({ ...t, _kind: 'tr' }));
     return [...txs, ...trs]
       .filter(i => i.date.slice(0, 10) > today())
       .sort((a, b) => a.date.localeCompare(b.date));
