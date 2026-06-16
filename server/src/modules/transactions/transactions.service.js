@@ -13,6 +13,7 @@ function invalidateAnalytics(userId) {
 }
 
 async function list(userId, { period, category, method, from, to, page = 1, limit = 20 }) {
+  limit = Math.min(parseInt(limit) || 20, 500);
   const where = ['t.user_id = $1'];
   const values = [userId];
   let i = 2;
