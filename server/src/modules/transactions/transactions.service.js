@@ -161,6 +161,12 @@ async function accountBalance(userId) {
 
        UNION ALL
 
+       SELECT 'Efectivo físico' AS account, 0, 0, t.amount AS recibido, 0
+       FROM transfers t
+       WHERE t.user_id = $1 AND t.date <= CURRENT_DATE AND t.type = 'retiro'
+
+       UNION ALL
+
        SELECT c.name AS account, 0, 0, 0, p.amount AS enviado
        FROM purchases p
        JOIN cards c ON c.id = p.card_id
