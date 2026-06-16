@@ -72,7 +72,13 @@ export default function Purchases() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['purchases', filter],
-    queryFn: () => purchasesApi.list(filter ? { status: filter } : {}),
+    queryFn: () => purchasesApi.list(filter ? { status: filter, limit: 500 } : { limit: 500 }),
+  });
+
+  // Query separada sin filtro para el resumen — siempre trae pendiente+urgente completos
+  const { data: allPending } = useQuery({
+    queryKey: ['purchases-pending'],
+    queryFn: () => purchasesApi.list({ limit: 500 }),
   });
 
   function invalidateAll() {
@@ -99,7 +105,7 @@ export default function Purchases() {
   // Resumen por mes de pago (solo tarjetas de CRÉDITO pendientes/urgentes)
   const payMonthSummary = useMemo(() => {
     const map = {};
-    for (const p of data?.data || []) {
+    for (const p of allPending?.data || []) {
       if (p.status === 'archivado' || p.status === 'pagado') continue;
       const card = cardById[p.card_id];
       // Solo crédito — efectivo y débito ya están pagados
@@ -114,7 +120,7 @@ export default function Purchases() {
       map[key].cards[cname] = (map[key].cards[cname] || 0) + parseFloat(p.amount);
     }
     return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
-  }, [data, cardById]);
+  }, [allPending, cardById]);
 
   function openCreate() { setEditing(null); setForm(empty); setOpen(true); }
   function openEdit(p) {
