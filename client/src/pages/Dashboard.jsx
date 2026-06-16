@@ -71,6 +71,7 @@ export default function Dashboard() {
     for (const p of pendingRes?.data || []) {
       if ((p.status !== 'pendiente' && p.status !== 'urgente') || !p.card_id) continue;
       const card = cardById[p.card_id];
+      if (!card || card.type !== 'credito') continue;
       const payMon = effectivePayMonth(p, card);
       if (payMon === thisMon) {
         map[p.card_id] = (map[p.card_id] || 0) + parseFloat(p.amount);
