@@ -70,7 +70,7 @@ async function create(userId, data) {
   if (isDebit && data.card_id) {
     await pool.query(
       `INSERT INTO transfers (user_id, from_card_id, to_card_id, amount, description, date, type)
-       VALUES ($1, $2, NULL, $3, $4, $5, 'retiro')`,
+       VALUES ($1, $2, NULL, $3, $4, $5, 'compra')`,
       [userId, data.card_id, data.amount, `Compra: ${rows[0].description}`, data.date]
     );
   }
