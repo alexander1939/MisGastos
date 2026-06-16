@@ -232,18 +232,16 @@ export default function Dashboard() {
           sub="saldo real acumulado"
         />
         <StatCard
-          label="Deuda pendiente"
-          value={formatCurrency(totalDeudaAll)}
+          label="Deuda este mes"
+          value={formatCurrency(totalDeuda)}
           color="text-red-400"
-          sub={totalDeuda > 0 && totalDeuda !== totalDeudaAll
-            ? `${formatCurrency(totalDeuda)} vence este mes`
-            : cardTotals.length > 0 ? cardTotals.map(c => c.name).join(', ') : undefined}
+          sub={cardTotals.length > 0 ? cardTotals.map(c => c.name).join(', ') : undefined}
         />
         <StatCard
           label="Disponible"
-          value={formatCurrency(totalEnCuentas - totalDeudaAll)}
-          color={(totalEnCuentas - totalDeudaAll) >= 0 ? 'text-green-400' : 'text-red-400'}
-          sub="en cuentas − toda la deuda"
+          value={formatCurrency(totalEnCuentas - totalDeuda)}
+          color={(totalEnCuentas - totalDeuda) >= 0 ? 'text-green-400' : 'text-red-400'}
+          sub="en cuentas − deuda del mes"
         />
         <StatCard
           label="Ingresos del mes"
