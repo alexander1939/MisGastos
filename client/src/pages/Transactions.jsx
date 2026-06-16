@@ -5,7 +5,7 @@ import { usePeriod } from '../hooks/usePeriod';
 import { cardsApi } from '../api/cards';
 import { transactionsApi } from '../api/transactions';
 import { transfersApi } from '../api/transfers';
-import { purchasesApi } from '../api/purchases';
+
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
@@ -48,7 +48,6 @@ export default function Transactions() {
   const debitCards = cards.filter(c => c.type === 'debito');
 
   const { data: allTransfers = [] } = useQuery({ queryKey: ['transfers'], queryFn: transfersApi.list });
-  const { data: purchasesRes } = useQuery({ queryKey: ['purchases-pending'], queryFn: () => purchasesApi.list({ limit: 500 }) });
 
   const removeTransfer = useMutation({
     mutationFn: transfersApi.remove,
@@ -85,42 +84,19 @@ export default function Transactions() {
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [data, allTransfers]);
 
-  // Compras filtradas por el mismo periodo
-  const purchases = useMemo(() => {
-    const all = (purchasesRes?.data || []).filter(p => p.status !== 'archivado');
-    const now = new Date();
-    if (period === 'semana') {
-      const d = new Date(now); d.setDate(d.getDate() - 7);
-      const from = d.toISOString().slice(0, 10);
-      return all.filter(p => p.date.slice(0, 10) >= from);
-    }
-    if (period === 'mes') {
-      const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-      return all.filter(p => p.date.slice(0, 10) >= from);
-    }
-    if (period === 'quincena') {
-      const day = now.getDate();
-      const start = day <= 15 ? 1 : 16;
-      const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(start).padStart(2, '0')}`;
-      return all.filter(p => p.date.slice(0, 10) >= from);
-    }
-    return all;
-  }, [purchasesRes, period]);
-
   // Lista unificada ordenada por fecha desc
   const todayStr = today();
   const allItems = useMemo(() => {
     const txs = (data?.data || []).map(t => ({ ...t, _kind: 'tx' }));
     const trs = transfers.map(t => ({ ...t, _kind: 'tr' }));
-    const pcs = purchases.map(p => ({ ...p, _kind: 'compra' }));
-    const merged = [...txs, ...trs, ...pcs].sort((a, b) =>
+    const merged = [...txs, ...trs].sort((a, b) =>
       b.date !== a.date
         ? b.date.localeCompare(a.date)
         : (b.created_at || '').localeCompare(a.created_at || '')
     );
     if (period === 'proximos') return merged.filter(i => i.date.slice(0, 10) > todayStr);
     return merged;
-  }, [data, transfers, purchases, period, todayStr]);
+  }, [data, transfers, period, todayStr]);
 
   const { data: balanceRaw = [] } = useQuery({
     queryKey: ['account-balance'],
@@ -365,34 +341,6 @@ export default function Transactions() {
                       <td className="px-4 py-3 flex gap-2 justify-end">
                         <button onClick={() => removeTransfer.mutate(item.id)} className="text-gray-600 hover:text-red-400 text-base leading-none">×</button>
                       </td>
-                    </tr>
-                  );
-                }
-
-                // Compra de tarjeta
-                if (item._kind === 'compra') {
-                  return (
-                    <tr key={`pc-${item.id}`} className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${isFuture ? 'opacity-70' : ''}`}>
-                      <td className="px-4 py-3 text-gray-400">
-                        <div className="flex items-center gap-1.5">
-                          {fmtDate(item.date)}
-                          {isFuture && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-400 font-medium">próximo</span>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">{item.description}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">
-                        {item.category}
-                        {item.card_name && <span className="text-gray-600"> · {item.card_name}</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-900/60 text-purple-300">
-                          compra
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-red-400">
-                        -{formatCurrency(item.amount)}
-                      </td>
-                      <td className="px-4 py-3" />
                     </tr>
                   );
                 }
