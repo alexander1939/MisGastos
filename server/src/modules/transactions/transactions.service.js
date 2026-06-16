@@ -158,6 +158,15 @@ async function accountBalance(userId) {
        FROM transfers t
        JOIN cards c ON c.id = t.from_card_id
        WHERE t.user_id = $1 AND t.date <= CURRENT_DATE
+
+       UNION ALL
+
+       SELECT c.name AS account, 0, 0, 0, p.amount AS enviado
+       FROM purchases p
+       JOIN cards c ON c.id = p.card_id
+       WHERE p.user_id = $1 AND p.date <= CURRENT_DATE
+         AND p.status != 'archivado'
+         AND c.type IN ('debito', 'transporte')
      ) sub
      GROUP BY account
      ORDER BY (SUM(ingresos) + SUM(recibido) - SUM(gastos) - SUM(enviado)) DESC`,

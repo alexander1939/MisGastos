@@ -66,15 +66,6 @@ async function create(userId, data) {
     [userId, data.card_id, data.description, data.amount, data.category, data.months || 1, data.date, data.pay_month || null, status]
   );
 
-  // Débito: crear retiro para descontar del saldo de la tarjeta
-  if (isDebit && data.card_id) {
-    await pool.query(
-      `INSERT INTO transfers (user_id, from_card_id, to_card_id, amount, description, date, type)
-       VALUES ($1, $2, NULL, $3, $4, $5, 'compra')`,
-      [userId, data.card_id, data.amount, `Compra: ${rows[0].description}`, data.date]
-    );
-  }
-
   await invalidateCards(userId);
   return rows[0];
 }
