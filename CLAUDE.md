@@ -45,6 +45,7 @@ Migraciones actuales:
 - `001_initial.sql` — schema base
 - `002_transfers.sql` — tabla de transferencias entre tarjetas
 - `003_pay_month.sql` — columna `pay_month` en purchases
+- `004_transfer_type.sql` — columna `type` en transfers (`transfer` | `retiro`)
 
 **Auth:** access token JWT (15m) devuelto en body → almacenado en Zustand + localStorage. Refresh token (30d) en `httpOnly cookie`. El interceptor de Axios en `client/src/api/client.js` renueva el access token automáticamente en 401. Al hacer login, se llama `queryClient.clear()` para forzar refetch de todos los datos con el nuevo token.
 
@@ -77,11 +78,15 @@ Schema base en `server/migrations/001_initial.sql`. Tablas: `users`, `cards`, `t
 
 **purchases.status** sigue la máquina de estados: `pendiente → pagado`, `urgente → pagado`, `pagado → archivado`. La transición se valida en `purchases.service.js` (`validTransitions`).
 
-**transactions.method**: en ingresos almacena la cuenta destino (nombre de tarjeta de débito o "Efectivo físico"). En gastos almacena el método de pago libre (efectivo, débito, etc.).
+**transactions.method**: en ingresos almacena la cuenta destino (nombre de tarjeta de débito/transporte o "Efectivo físico"). En gastos almacena el nombre de la tarjeta o "Efectivo físico" seleccionado desde un dropdown.
 
-**transfers**: registra movimientos entre tarjetas del usuario. Campos: `from_card_id`, `to_card_id`, `amount`, `description`, `date`. Se incluyen en el cálculo de saldo por cuenta junto con las transactions.
+**transfers.type**: `'transfer'` para transferencias entre tarjetas, `'retiro'` para retiros a banco/externo. Ambos campos `from_card_id` y `to_card_id` son opcionales (permite "externo").
 
-El cron en `server/src/jobs/urgentChecker.js` marca compras como `urgente` a las 8am diariamente cuando faltan ≤5 días para fin de mes.
+**transfers**: registra movimientos entre tarjetas del usuario. Se incluyen en el cálculo de saldo por cuenta junto con las transactions.
+
+El cron en `server/src/jobs/urgentChecker.js` corre al arrancar y a las 8am diariamente:
+- Marca como `urgente` las compras `pendiente` cuya fecha de pago está a ≤5 días
+- **Revierte a `pendiente`** las compras `urgente` cuya fecha de pago está a >5 días (por si cambió el pay_day o pay_month)
 
 Las analíticas (`/api/analytics/*`) incluyen tanto `transactions` como `purchases` en todos los cálculos de gastos. Se cachean en Redis con TTL de 30 segundos y se invalidan explícitamente en cada mutación.
 
@@ -109,14 +114,14 @@ Esta lógica se usa consistentemente en:
 
 ```
 /api/auth               registro, login, logout, refresh, perfil (GET/PUT/DELETE)
-/api/transactions       CRUD + import CSV + summary + account-balance
-/api/cards              CRUD + summary (deuda y % de uso)
-/api/purchases          CRUD + stats + updateStatus + pay-card
+/api/transactions       CRUD + import CSV + summary + account-balance + export
+/api/cards              CRUD + summary (deuda y % de uso) + export/import
+/api/purchases          CRUD + stats + updateStatus + pay-card + export/import
 /api/budgets            upsert masivo + status (% gastado)
 /api/archive            historial + close-month
 /api/analytics          byCategory, byMethod, trend, cardsDebt, monthlyComparison
 /api/calendar           CRUD + upcoming + toggleDone
-/api/transfers          CRUD (transferencias entre tarjetas)
+/api/transfers          CRUD + export/import (transferencias entre tarjetas)
 ```
 
 ### Endpoints clave
@@ -127,9 +132,10 @@ Esta lógica se usa consistentemente en:
 - Body: `{ cardId, month, fromCardName }`
 - **IMPORTANTE:** No usar `category = 'Pago tarjeta'` en transactions. Los analytics excluyen esa categoría para evitar doble conteo con las purchases.
 
-**GET /api/transactions/account-balance** — saldo por cuenta (tarjetas débito + efectivo):
+**GET /api/transactions/account-balance** — saldo por cuenta (tarjetas débito + transporte + efectivo):
 - Combina `transactions` (ingresos/gastos por method) + `transfers` (recibido/enviado por card)
 - Saldo = ingresos + recibido - gastos - enviado
+- Solo se muestran en la UI las cuentas con saldo distinto de $0
 
 **GET /api/analytics/by-category?period=mes** — gastos del mes actual por categoría:
 - Para purchases: filtra por `effective_pay_month` (COALESCE de pay_month o cálculo por cut_day), no por fecha de compra
@@ -141,12 +147,15 @@ Esta lógica se usa consistentemente en:
 
 ```
 /              Dashboard — stats del mes, gráficas, actividad de la semana
-/transactions  Movimientos — ingresos/gastos + gráfica de saldo por cuenta débito
+/transactions  Movimientos — ingresos/gastos + gráfica de saldo por cuenta (débito + transporte + efectivo)
 /cards         Tarjetas — crédito (con botón Pagar ciclo), débito, transporte
 /purchases     Compras — con ciclo de cobro, resumen por mes de pago
 /transfers     Transferencias — entre tarjetas o al banco
+/budgets       Presupuestos por categoría
+/archive       Historial de meses cerrados
 /calendar      Calendario — grid mensual con eventos, compras por mes de pago
 /profile       Perfil — editar nombre, salario, contraseña
+/datos         Exportar / importar todo (CSV unificado con 4 secciones)
 ```
 
 ## Formularios y categorías
@@ -154,8 +163,8 @@ Esta lógica se usa consistentemente en:
 **Movimientos (Transactions):**
 - Categorías de **gasto**: Comida, Transporte, Renta, Salud, Entretenimiento, Ropa, Servicios, Otro
 - Categorías de **ingreso**: Salario, Transferencia, Regalo, Freelance, Venta, Otro
-- Campo "Entró a" (ingresos): selector con tarjetas de débito + "Efectivo físico" → se guarda en `method`
-- Campo "Método de pago" (gastos): texto libre
+- Campo "Entró a" (ingresos): selector con tarjetas de débito + transporte + "Efectivo físico" → se guarda en `method`
+- Campo "Método de pago" (gastos): **selector** con todas las tarjetas + "Efectivo físico" → se guarda en `method`
 
 **Tarjetas (Cards):**
 - Tipo **crédito**: nombre, color, límite, día de corte, día de pago
