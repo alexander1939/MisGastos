@@ -141,7 +141,8 @@ export default function Transactions() {
         saldo: parseFloat(r.ingresos) + parseFloat(r.recibido || 0)
              - parseFloat(r.gastos)   - parseFloat(r.enviado  || 0),
         color: debitCards.find(c => c.name === r.account)?.color || '#10b981',
-      }));
+      }))
+      .filter(d => d.saldo !== 0);
   }, [balanceRaw, debitCards]);
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
