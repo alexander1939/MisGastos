@@ -46,7 +46,7 @@ export default function Transactions() {
   const remove = useDeleteTransaction();
 
   const { data: cards = [] } = useQuery({ queryKey: ['cards'], queryFn: cardsApi.list });
-  const debitCards = cards.filter(c => c.type === 'debito');
+  const debitCards = cards.filter(c => c.type === 'debito' || c.type === 'transporte');
 
   const { data: allTransfers = [] } = useQuery({ queryKey: ['transfers'], queryFn: transfersApi.list });
   const { data: purchasesRes } = useQuery({ queryKey: ['purchases-pending'], queryFn: () => purchasesApi.list({ limit: 500 }) });
@@ -488,7 +488,11 @@ export default function Transactions() {
                   {debitCards.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                 </Select>
               ) : (
-                <Input label="Método de pago" value={form.method} onChange={set('method')} placeholder="Efectivo, débito..." />
+                <Select label="Método de pago" value={form.method} onChange={set('method')}>
+                  <option value="">— Selecciona —</option>
+                  <option value="Efectivo físico">Efectivo físico</option>
+                  {cards.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </Select>
               )}
             </>
           )}
