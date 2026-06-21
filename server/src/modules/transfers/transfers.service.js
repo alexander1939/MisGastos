@@ -1,4 +1,13 @@
 const { pool } = require('../../config/db');
+const { redis } = require('../../config/redis');
+
+const invalidateAll = (userId) => redis.del(
+  `analytics:cards:${userId}`,
+  `analytics:cat:${userId}:mes`,
+  `analytics:cat:${userId}:semana`,
+  `analytics:cat:${userId}:all`,
+  `analytics:monthly:${userId}:6`
+);
 
 async function list(userId) {
   const { rows } = await pool.query(
@@ -17,12 +26,58 @@ async function list(userId) {
 
 async function create(userId, data) {
   const type = data.type === 'retiro' ? 'retiro' : 'transfer';
-  const { rows } = await pool.query(
-    `INSERT INTO transfers (user_id, from_card_id, to_card_id, amount, description, date, type)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [userId, data.from_card_id || null, data.to_card_id || null, data.amount, data.description || null, data.date, type]
-  );
-  return rows[0];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Registrar la transferencia
+    const { rows: [transfer] } = await client.query(
+      `INSERT INTO transfers (user_id, from_card_id, to_card_id, amount, description, date, type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [userId, data.from_card_id || null, data.to_card_id || null,
+       data.amount, data.description || null, data.date, type]
+    );
+
+    // Si el destino es una tarjeta de crédito, marcar compras pendientes del ciclo como pagadas
+    if (data.to_card_id) {
+      const { rows: [toCard] } = await client.query(
+        `SELECT id, type FROM cards WHERE id = $1 AND user_id = $2`,
+        [data.to_card_id, userId]
+      );
+
+      if (toCard?.type === 'credito') {
+        const now = new Date();
+        const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+        await client.query(
+          `UPDATE purchases SET status = 'pagado'
+           WHERE user_id = $1
+             AND card_id = $2
+             AND status IN ('pendiente', 'urgente')
+             AND COALESCE(
+               pay_month,
+               CASE
+                 WHEN EXTRACT(DAY FROM date) <= COALESCE(
+                   (SELECT cut_day FROM cards WHERE id = $2), 31
+                 )
+                   THEN TO_CHAR(date, 'YYYY-MM')
+                 ELSE TO_CHAR(date + INTERVAL '1 month', 'YYYY-MM')
+               END
+             ) = $3`,
+          [userId, data.to_card_id, month]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    await invalidateAll(userId);
+    return transfer;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 async function remove(userId, id) {
