@@ -83,7 +83,7 @@ export default function Purchases() {
 
   function invalidateAll() {
     ['purchases', 'purchases-pending', 'purchases-cal',
-     'monthly', 'summary', 'trend', 'byCategory'].forEach(k =>
+     'monthly', 'summary', 'trend', 'byCategory', 'account-balance'].forEach(k =>
       qc.invalidateQueries({ queryKey: [k] })
     );
   }
