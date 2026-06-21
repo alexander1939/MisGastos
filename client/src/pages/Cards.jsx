@@ -41,13 +41,11 @@ export default function Cards() {
     const map = {};
     for (const p of allPurchases) {
       if (p.status !== 'pendiente' && p.status !== 'urgente') continue;
-      const card = cardById[p.card_id];
-      if (effectivePayMonth(p, card) === month) {
-        map[p.card_id] = (map[p.card_id] || 0) + parseFloat(p.amount);
-      }
+      if (!p.card_id) continue;
+      map[p.card_id] = (map[p.card_id] || 0) + parseFloat(p.amount);
     }
     return map;
-  }, [allPurchases, cardById, month]);
+  }, [allPurchases]);
 
   const payCardMutation = useMutation({
     mutationFn: purchasesApi.payCard,
@@ -134,7 +132,7 @@ export default function Cards() {
                 {card.type === 'credito' && (
                   <div className="border-t border-white/20 pt-3 flex items-center justify-between">
                     <div>
-                      <p className="text-xs opacity-60">Deuda este ciclo</p>
+                      <p className="text-xs opacity-60">Deuda total pendiente</p>
                       <p className="font-bold text-sm">{formatCurrency(debt)}</p>
                     </div>
                     {debt > 0 && (
