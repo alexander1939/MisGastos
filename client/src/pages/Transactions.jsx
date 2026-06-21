@@ -55,7 +55,7 @@ export default function Transactions() {
     mutationFn: transfersApi.remove,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transfers'] });
-      queryClient.invalidateQueries({ queryKey: ['account-balance'] });
+      queryClient.refetchQueries({ queryKey: ['account-balance'] });
     },
   });
 
@@ -183,7 +183,7 @@ export default function Transactions() {
         date: form.date,
       });
       queryClient.invalidateQueries({ queryKey: ['transfers'] });
-      queryClient.invalidateQueries({ queryKey: ['account-balance'] });
+      queryClient.refetchQueries({ queryKey: ['account-balance'] });
     } else {
       const payload = { ...form, amount: parseFloat(form.amount) };
       if (editing) await update.mutateAsync({ id: editing.id, ...payload });

@@ -6,7 +6,9 @@ const invalidateCards = (userId) => redis.del(
   `analytics:cat:${userId}:mes`,
   `analytics:cat:${userId}:semana`,
   `analytics:cat:${userId}:all`,
-  `analytics:monthly:${userId}:6`
+  `analytics:monthly:${userId}:6`,
+  `analytics:method:${userId}:mes`,
+  `analytics:trend:${userId}:30`
 );
 
 async function list(userId, { cardId, status, period, from, to, page = 1, limit = 20 }) {

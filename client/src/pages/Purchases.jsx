@@ -83,9 +83,10 @@ export default function Purchases() {
 
   function invalidateAll() {
     ['purchases', 'purchases-pending', 'purchases-cal',
-     'monthly', 'summary', 'trend', 'byCategory', 'account-balance'].forEach(k =>
+     'monthly', 'summary', 'trend', 'byCategory'].forEach(k =>
       qc.invalidateQueries({ queryKey: [k] })
     );
+    qc.refetchQueries({ queryKey: ['account-balance'] });
   }
 
   const create       = useMutation({ mutationFn: purchasesApi.create, onSuccess: invalidateAll });

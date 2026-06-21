@@ -2,9 +2,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { transactionsApi } from '../api/transactions';
 
 function invalidateDashboard(qc) {
-  ['summary', 'trend', 'byCategory', 'monthly', 'transactions-recent', 'account-balance'].forEach(k =>
+  ['summary', 'trend', 'byCategory', 'monthly', 'transactions-recent'].forEach(k =>
     qc.invalidateQueries({ queryKey: [k] })
   );
+  qc.refetchQueries({ queryKey: ['account-balance'] });
 }
 
 export function useTransactions(params) {
